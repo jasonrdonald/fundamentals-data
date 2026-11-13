@@ -1,0 +1,148 @@
+{
+  "constituents": {
+    "index": "NIFTY 50",
+    "url": "https://archives.nseindia.com/content/indices/ind_nifty50list.csv"
+  },
+  "indices": [
+    {
+      "symbol": "NIFTY 50",
+      "name": "Nifty 50",
+      "category": "BROAD",
+      "yahoo": "^NSEI",
+      "fullHistory": true,
+      "valuation": {
+        "nseNames": [
+          "Nifty 50",
+          "CNX Nifty",
+          "S&P CNX Nifty"
+        ],
+        "from": "2012-04"
+      }
+    },
+    {
+      "symbol": "NIFTY NEXT 50",
+      "name": "Nifty Next 50",
+      "category": "BROAD",
+      "yahoo": "^NSMIDCP"
+    },
+    {
+      "symbol": "NIFTY 500",
+      "name": "Nifty 500",
+      "category": "BROAD",
+      "yahoo": "^CRSLDX"
+    },
+    {
+      "symbol": "NIFTY MIDCAP 150",
+      "name": "Nifty Midcap 150",
+      "category": "BROAD",
+      "yahoo": "NIFTYMIDCAP150.NS"
+    },
+    {
+      "symbol": "NIFTY BANK",
+      "name": "Nifty Bank",
+      "category": "SECTOR",
+      "yahoo": "^NSEBANK"
+    },
+    {
+      "symbol": "NIFTY FIN SERVICE",
+      "name": "Nifty Financial Services",
+      "category": "SECTOR",
+      "yahoo": "NIFTY_FIN_SERVICE.NS"
+    },
+    {
+      "symbol": "NIFTY PSU BANK",
+      "name": "Nifty PSU Bank",
+      "category": "SECTOR",
+      "yahoo": "^CNXPSUBANK"
+    },
+    {
+      "symbol": "NIFTY IT",
+      "name": "Nifty IT",
+      "category": "SECTOR",
+      "yahoo": "^CNXIT"
+    },
+    {
+      "symbol": "NIFTY AUTO",
+      "name": "Nifty Auto",
+      "category": "SECTOR",
+      "yahoo": "^CNXAUTO"
+    },
+    {
+      "symbol": "NIFTY FMCG",
+      "name": "Nifty FMCG",
+      "category": "SECTOR",
+      "yahoo": "^CNXFMCG"
+    },
+    {
+      "symbol": "NIFTY PHARMA",
+      "name": "Nifty Pharma",
+      "category": "SECTOR",
+      "yahoo": "^CNXPHARMA"
+    },
+    {
+      "symbol": "NIFTY METAL",
+      "name": "Nifty Metal",
+      "category": "SECTOR",
+      "yahoo": "^CNXMETAL"
+    },
+    {
+      "symbol": "NIFTY ENERGY",
+      "name": "Nifty Energy",
+      "category": "SECTOR",
+      "yahoo": "^CNXENERGY"
+    },
+    {
+      "symbol": "NIFTY REALTY",
+      "name": "Nifty Realty",
+      "category": "SECTOR",
+      "yahoo": "^CNXREALTY"
+    },
+    {
+      "symbol": "NIFTY INFRA",
+      "name": "Nifty Infrastructure",
+      "category": "THEMATIC",
+      "yahoo": "^CNXINFRA"
+    },
+    {
+      "symbol": "NIFTY PSE",
+      "name": "Nifty PSE",
+      "category": "THEMATIC",
+      "yahoo": "^CNXPSE"
+    },
+    {
+      "symbol": "NIFTY CONSUMPTION",
+      "name": "Nifty India Consumption",
+      "category": "THEMATIC",
+      "yahoo": "^CNXCONSUM"
+    },
+    {
+      "symbol": "NIFTY MNC",
+      "name": "Nifty MNC",
+      "category": "THEMATIC",
+      "yahoo": "^CNXMNC"
+    },
+    {
+      "symbol": "INDIA VIX",
+      "name": "India VIX",
+      "category": "VOLATILITY",
+      "yahoo": "^INDIAVIX"
+    }
+  ],
+  "stocks": {
+    "note": "Constituent stocks per index: price history and fundamentals. Each stock is benchmarked against its own index.",
+    "universes": [
+      {
+        "index": "NIFTY 50",
+        "url": "https://archives.nseindia.com/content/indices/ind_nifty50list.csv"
+      },
+      {
+        "index": "NIFTY NEXT 50",
+        "url": "https://archives.nseindia.com/content/indices/ind_niftynext50list.csv"
+      },
+      {
+        "index": "NIFTY MIDCAP 150",
+        "url": "https://archives.nseindia.com/content/indices/ind_niftymidcap150list.csv"
+      }
+    ]
+  }
+}

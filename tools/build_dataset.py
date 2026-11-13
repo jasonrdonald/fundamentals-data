@@ -1,0 +1,475 @@
+#!/usr/bin/env python3
+"""Builds shared-data/dataset.json, the shared dataset the app reads, from public index data.
+
+Sources (open endpoints, no login, no cookies):
+  * Index OHLCV (daily + monthly): Yahoo Finance chart API
+  * Nifty 50 constituents with NSE industry classification: NSE archives CSV
+
+The dataset holds raw primary data only; the app computes performance, momentum and
+volume analytics from it. Standard library only, so it runs anywhere Python 3.9+ exists.
+
+Usage:  python tools/build_dataset.py [--out shared-data/dataset.json] [--seed app/src/main/assets/seed_dataset.json]
+"""
+from __future__ import annotations
+
+import argparse
+import csv
+import io
+import json
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
+
+SCHEMA_VERSION = 3  # 3: compact stock price arrays on shared calendars; multiple stock universes
+DAILY_BARS = 300      # ~14 months: prev day, 1Y return, 200-DMA, 52-week range
+MONTHLY_BARS = 72     # 6 years of month-on-month data (5 full years + context)
+USER_AGENT = "fundamentals-data-pipeline/1.0 (+https://github.com/jasonrdonald/fundamentals-data)"
+ROOT = Path(__file__).resolve().parent.parent
+IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def http_get(url: str, attempts: int = 4) -> bytes:
+    delay = 2.0
+    for attempt in range(1, attempts + 1):
+        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "*/*"})
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                return resp.read()
+        except (urllib.error.URLError, TimeoutError) as e:
+            status = getattr(e, "code", None)
+            if attempt == attempts or status in (400, 401, 403, 404):
+                raise
+            print(f"  retry {attempt} for {url} ({e})", file=sys.stderr)
+            time.sleep(delay)
+            delay *= 2
+    raise RuntimeError("unreachable")
+
+
+def chart(yahoo_symbol: str, interval: str, range_: str) -> dict:
+    """`range_` is a Yahoo range ("10y") or "all". Yahoo silently downgrades range=max to monthly
+    bars, so full history is requested with an explicit period instead, which keeps daily bars."""
+    span = (f"period1=946684800&period2={int(time.time())}" if range_ == "all" else f"range={range_}")
+    url = (
+        "https://query1.finance.yahoo.com/v8/finance/chart/"
+        + urllib.parse.quote(yahoo_symbol, safe="")
+        + f"?interval={interval}&{span}&includePrePost=false&events="
+    )
+    payload = json.loads(http_get(url))
+    result = (payload.get("chart") or {}).get("result") or []
+    if not result:
+        raise ValueError(f"no chart data for {yahoo_symbol}: {payload.get('chart', {}).get('error')}")
+    return result[0]
+
+
+def local_date(ts: int, meta: dict) -> str:
+    offset = timedelta(seconds=meta.get("gmtoffset", 19800))
+    return (datetime.fromtimestamp(ts, tz=timezone.utc) + offset).strftime("%Y-%m-%d")
+
+
+def session_open(yahoo_symbol: str) -> float | None:
+    """Opening print of the latest session, from intraday bars."""
+    r = chart(yahoo_symbol, "15m", "1d")
+    opens = [o for o in r["indicators"]["quote"][0].get("open") or [] if o is not None]
+    return opens[0] if opens else None
+
+
+def fetch_daily(yahoo_symbol: str, range_: str = "10y") -> list[dict]:
+    r = chart(yahoo_symbol, "1d", range_)
+    meta = r.get("meta", {})
+    quote = r["indicators"]["quote"][0]
+    volumes = quote.get("volume") or []
+    bars = []
+    for i, ts in enumerate(r.get("timestamp") or []):
+        o, h, l, c = (quote[k][i] for k in ("open", "high", "low", "close"))
+        if c is None or o is None:
+            continue  # holidays / missing prints
+        vol = volumes[i] if i < len(volumes) else None
+        bars.append({
+            "d": local_date(ts, meta),
+            "o": round(o, 2), "h": round(h if h is not None else max(o, c), 2),
+            "l": round(l if l is not None else min(o, c), 2), "c": round(c, 2),
+            "v": int(vol) if vol else None,
+        })
+
+    # Yahoo often leaves the most recent finished session empty in the series while its
+    # metadata already carries the final close/high/low. Rebuild that bar once the session ended.
+    regular = (meta.get("currentTradingPeriod") or {}).get("regular") or {}
+    market_time, price = meta.get("regularMarketTime"), meta.get("regularMarketPrice")
+    session_ended = regular.get("end") is not None and time.time() >= regular["end"]
+    if market_time and price and session_ended:
+        day = local_date(market_time, meta)
+        if not bars or bars[-1]["d"] < day:
+            o = session_open(yahoo_symbol) or (bars[-1]["c"] if bars else price)
+            h = meta.get("regularMarketDayHigh") or max(o, price)
+            l = meta.get("regularMarketDayLow") or min(o, price)
+            vol = meta.get("regularMarketVolume")
+            bars.append({"d": day, "o": round(o, 2), "h": round(h, 2), "l": round(l, 2),
+                         "c": round(price, 2), "v": int(vol) if vol else None})
+
+    by_date = {b["d"]: b for b in bars}  # de-duplicate, keeping the latest copy
+    return [by_date[d] for d in sorted(by_date)]
+
+
+def monthly_from_daily(daily: list[dict]) -> list[dict]:
+    """Month-on-month OHLCV aggregated from daily sessions (Yahoo's own monthly bars are unreliable)."""
+    months: dict[str, list[dict]] = {}
+    for b in daily:
+        months.setdefault(b["d"][:7], []).append(b)
+    out = []
+    for key in sorted(months):
+        bars = months[key]
+        vols = [b["v"] for b in bars if b["v"]]
+        out.append({
+            "d": key + "-01",
+            "o": bars[0]["o"], "h": max(b["h"] for b in bars), "l": min(b["l"] for b in bars),
+            "c": bars[-1]["c"], "v": sum(vols) if vols else None,
+            "sessions": len(bars), "last": bars[-1]["d"],
+        })
+    return out
+
+
+def fetch_index(spec: dict, previous: dict | None) -> dict:
+    full = bool(spec.get("fullHistory"))
+    all_daily = fetch_daily(spec["yahoo"], "all" if full else "10y")
+    # A bar dated today while the market is still open is incomplete: drop it.
+    today = datetime.now(IST)
+    if all_daily and all_daily[-1]["d"] == today.strftime("%Y-%m-%d") and today.hour * 60 + today.minute < 15 * 60 + 35:
+        all_daily = all_daily[:-1]
+    monthly = monthly_from_daily(all_daily)
+    if not full:
+        monthly = monthly[-MONTHLY_BARS:]
+    daily = all_daily[-DAILY_BARS:]
+    if len(daily) < 30 or len(monthly) < 12:
+        raise ValueError(f"insufficient history ({len(daily)} daily / {len(monthly)} monthly)")
+    out = {
+        "symbol": spec["symbol"],
+        "name": spec["name"],
+        "category": spec["category"],
+        "source": "yahoo:" + spec["yahoo"],
+        "daily": daily,
+        "monthly": monthly,
+    }
+    if spec.get("valuation"):
+        out["valuation"] = fetch_valuation(spec["valuation"], (previous or {}).get("valuation") or [], daily[-1]["d"])
+        out["valuationSource"] = "NSE ind_close_all archive (month-end P/E, P/B, dividend yield)"
+    return out
+
+
+# --- Month-end valuation (P/E, P/B, dividend yield) from NSE's daily index archive -------------
+# One CSV per trading day lists every NSE index with its close, P/E, P/B and dividend yield.
+# Files exist only for trading days, so the month-end value is the last day that has a file.
+
+NSE_DAILY_URL = "https://archives.nseindia.com/content/indices/ind_close_all_{ddmmyyyy}.csv"
+
+
+def nse_index_row(day: date, names: list[str]) -> dict | None:
+    url = NSE_DAILY_URL.format(ddmmyyyy=day.strftime("%d%m%Y"))
+    try:
+        text = http_get(url, attempts=2).decode("utf-8-sig", errors="replace")
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return None  # holiday / weekend: no file
+        raise
+    wanted = {n.lower() for n in names}
+    for row in csv.DictReader(io.StringIO(text)):
+        if (row.get("Index Name") or "").strip().lower() in wanted:
+            def num(key: str) -> float | None:
+                try:
+                    v = float((row.get(key) or "").strip())
+                    return v if v > 0 else None
+                except ValueError:
+                    return None
+            return {"d": day.isoformat(), "pe": num("P/E"), "pb": num("P/B"), "dy": num("Div Yield")}
+    return None
+
+
+def month_end_row(year: int, month: int, names: list[str], not_after: date) -> dict | None:
+    """Walk back from the month's last day (or `not_after`) to the last trading day with a file."""
+    last = (date(year + (month == 12), month % 12 + 1, 1) - timedelta(days=1))
+    day = min(last, not_after)
+    for _ in range(12):  # covers long holiday stretches
+        if day.month != month:
+            return None
+        if day.weekday() < 5:
+            row = nse_index_row(day, names)
+            time.sleep(0.25)
+            if row:
+                return row
+        day -= timedelta(days=1)
+    return None
+
+
+def fetch_valuation(cfg: dict, previous: list[dict], latest_session: str) -> list[dict]:
+    """Month-end series, reusing stored months and re-fetching only the last two (which may still move)."""
+    by_month = {v["d"][:7]: v for v in previous}
+    latest = date.fromisoformat(latest_session)
+    start_y, start_m = (int(x) for x in cfg["from"].split("-"))
+    months = []
+    y, m = start_y, start_m
+    while (y, m) <= (latest.year, latest.month):
+        months.append((y, m))
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+    refresh = set(months[-2:])
+    fetched = 0
+    for (y, m) in months:
+        key = f"{y:04d}-{m:02d}"
+        if key in by_month and (y, m) not in refresh:
+            continue
+        row = month_end_row(y, m, cfg["nseNames"], latest)
+        fetched += 1
+        if row and row.get("pe"):
+            by_month[key] = row
+    print(f"  valuation: {len(by_month)} months ({fetched} fetched)")
+    return [by_month[k] for k in sorted(by_month)]
+
+
+def fetch_constituents(cfg: dict) -> dict:
+    text = http_get(cfg["url"]).decode("utf-8-sig")
+    rows = list(csv.DictReader(io.StringIO(text)))
+    constituents = [
+        {"symbol": r["Symbol"].strip(), "name": r["Company Name"].strip(), "industry": r["Industry"].strip()}
+        for r in rows if r.get("Symbol")
+    ]
+    if len(constituents) < 20:
+        raise ValueError(f"unexpected constituent count {len(constituents)}")
+    return {
+        "index": cfg["index"],
+        "asOf": datetime.now(IST).strftime("%Y-%m-%d"),
+        "source": cfg["url"],
+        "constituents": sorted(constituents, key=lambda c: c["symbol"]),
+    }
+
+
+def load_existing(path: Path) -> dict | None:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        # Older schemas are still useful for reusing slowly-changing parts (e.g. valuation history).
+        return data if (data.get("schemaVersion") or 0) >= 2 else None
+    except (OSError, ValueError):
+        return None
+
+
+def content_key(dataset: dict) -> str:
+    """Everything except bookkeeping fields, so unchanged data does not bump the version."""
+    stripped = {k: v for k, v in dataset.items() if k not in ("version", "generatedAt", "schemaVersion")}
+    comp = stripped.get("composition")
+    if comp:
+        stripped["composition"] = {k: v for k, v in comp.items() if k != "asOf"}
+    if stripped.get("universes"):
+        stripped["universes"] = [{k: v for k, v in u.items() if k != "asOf"} for u in stripped["universes"]]
+    return json.dumps(stripped, sort_keys=True)
+
+
+def build(config: dict, existing: dict | None) -> dict:
+    previous = {i["symbol"]: i for i in (existing or {}).get("indices", [])}
+    indices, failures = [], []
+    for spec in config["indices"]:
+        print(f"fetching {spec['symbol']} ({spec['yahoo']})")
+        try:
+            indices.append(fetch_index(spec, previous.get(spec["symbol"])))
+        except Exception as e:  # keep the last good copy of a single failing index
+            failures.append(spec["symbol"])
+            print(f"  FAILED {spec['symbol']}: {e}", file=sys.stderr)
+            if spec["symbol"] in previous:
+                indices.append(previous[spec["symbol"]])
+        time.sleep(0.4)  # be polite to the public endpoint
+
+    if not any(i["symbol"] == "NIFTY 50" for i in indices):
+        raise SystemExit("NIFTY 50 could not be fetched and no previous copy exists; aborting")
+
+    try:
+        composition = fetch_constituents(config["constituents"])
+    except Exception as e:
+        print(f"  FAILED constituents: {e}", file=sys.stderr)
+        composition = (existing or {}).get("composition")
+
+    # Stock universes: constituents of each configured index, benchmarked against that index.
+    universes, stocks = [], None
+    if config.get("stocks"):
+        old_universes = {u["index"]: u for u in (existing or {}).get("universes") or []}
+        for u in config["stocks"]["universes"]:
+            try:
+                universes.append(fetch_constituents(u))
+            except Exception as e:
+                print(f"  FAILED constituents {u['index']}: {e}", file=sys.stderr)
+                if u["index"] in old_universes:
+                    universes.append(old_universes[u["index"]])
+        stocks = fetch_stocks(universes, (existing or {}).get("stocks"), failures)
+
+    latest = max(i["daily"][-1]["d"] for i in indices)
+    return {
+        "schemaVersion": SCHEMA_VERSION,
+        "version": 0,
+        "updatedAt": latest,
+        "generatedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "note": "Nifty index and constituent market data. Prices in index points / INR; financials in INR crore.",
+        "indices": indices,
+        "composition": composition,
+        "universes": universes,
+        "stocks": stocks,
+        "failures": failures,
+    }
+
+
+# --- Constituent stocks ------------------------------------------------------------------------
+STOCK_MONTHS = 121       # 10 years of month-on-month history (+1 base month)
+STOCK_SESSIONS = 260     # ~1 year of daily closes: momentum, RSI, 200-DMA, volatility
+CRORE = 1e7
+
+FUNDAMENTAL_TYPES = [
+    "annualTotalRevenue", "annualNetIncome", "annualOperatingIncome", "annualStockholdersEquity",
+    "annualTotalDebt", "annualDilutedEPS", "quarterlyTotalRevenue", "quarterlyNetIncome",
+    "quarterlyDilutedEPS", "trailingMarketCap", "trailingPeRatio", "trailingPbRatio",
+]
+
+
+def yahoo_symbol(nse_symbol: str) -> str:
+    return nse_symbol + ".NS"
+
+
+def fetch_fundamentals(yahoo: str) -> dict:
+    """Annual (4y) and quarterly (up to 5q) statements plus trailing valuation, amounts in INR crore."""
+    url = (
+        "https://query1.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/"
+        + urllib.parse.quote(yahoo, safe="")
+        + "?type=" + ",".join(FUNDAMENTAL_TYPES)
+        + f"&period1=1420070400&period2={int(time.time())}"
+    )
+    result = (json.loads(http_get(url)).get("timeseries") or {}).get("result") or []
+    series: dict[str, dict[str, float]] = {}
+    for r in result:
+        t = r["meta"]["type"][0]
+        series[t] = {p["asOfDate"]: p["reportedValue"]["raw"] for p in (r.get(t) or []) if p and p.get("reportedValue")}
+
+    def latest(t: str) -> float | None:
+        s = series.get(t) or {}
+        return s[max(s)] if s else None
+
+    def periods(prefix: str, fields: dict[str, tuple[str, bool]]) -> list[dict]:
+        dates = sorted({d for f in fields.values() for d in (series.get(prefix + f[0]) or {})})
+        rows = []
+        for d in dates:
+            row = {"d": d}
+            for key, (t, money) in fields.items():
+                v = (series.get(prefix + t) or {}).get(d)
+                row[key] = None if v is None else round(v / CRORE, 2) if money else round(v, 2)
+            rows.append(row)
+        return rows
+
+    cap = latest("trailingMarketCap")
+    return {
+        "marketCapCr": round(cap / CRORE, 1) if cap else None,
+        "pe": round(latest("trailingPeRatio"), 2) if latest("trailingPeRatio") else None,
+        "pb": round(latest("trailingPbRatio"), 2) if latest("trailingPbRatio") else None,
+        "annual": periods("annual", {
+            "revenue": ("TotalRevenue", True), "netIncome": ("NetIncome", True),
+            "operatingIncome": ("OperatingIncome", True), "equity": ("StockholdersEquity", True),
+            "debt": ("TotalDebt", True), "eps": ("DilutedEPS", False),
+        }),
+        "quarterly": periods("quarterly", {
+            "revenue": ("TotalRevenue", True), "netIncome": ("NetIncome", True), "eps": ("DilutedEPS", False),
+        }),
+    }
+
+
+def fetch_stock(constituent: dict, index: str) -> dict:
+    yahoo = yahoo_symbol(constituent["symbol"])
+    all_daily = fetch_daily(yahoo, "10y")
+    today = datetime.now(IST)
+    if all_daily and all_daily[-1]["d"] == today.strftime("%Y-%m-%d") and today.hour * 60 + today.minute < 15 * 60 + 35:
+        all_daily = all_daily[:-1]
+    if len(all_daily) < 60:
+        raise ValueError(f"insufficient history ({len(all_daily)} sessions)")
+    time.sleep(0.3)
+    return {
+        "symbol": constituent["symbol"],
+        "name": constituent["name"],
+        "industry": constituent["industry"],
+        "index": index,
+        "source": "yahoo:" + yahoo,
+        # Expanded to the shared calendars in fetch_stocks().
+        "_monthly": {m["d"]: m["c"] for m in monthly_from_daily(all_daily)},
+        "_daily": {b["d"]: b["c"] for b in all_daily[-STOCK_SESSIONS - 20:]},
+        "fundamentals": fetch_fundamentals(yahoo),
+    }
+
+
+def _expand(item: dict, months: list[str], sessions: list[str]) -> dict:
+    """Old compact item -> per-date maps, so a failed stock can reuse its previous copy."""
+    if "_monthly" in item:
+        return item
+    old_months = item.get("_months_ref") or []
+    return {**item,
+            "_monthly": {d: c for d, c in zip(old_months, item.get("mc") or []) if c is not None},
+            "_daily": {d: c for d, c in zip(item.get("_sessions_ref") or [], item.get("dc") or []) if c is not None}}
+
+
+def fetch_stocks(universes: list[dict], previous: dict | None, failures: list[str]) -> dict:
+    """
+    Compact layout: one shared month list and one shared session list; each stock stores only
+    its closes aligned to them (null before listing / when not traded). Keeps 250 stocks small.
+    """
+    before = {}
+    if previous and previous.get("months") is not None:
+        for it in previous.get("items", []):
+            before[it["symbol"]] = {**it, "_months_ref": previous["months"], "_sessions_ref": previous["sessions"]}
+    items = []
+    for u in universes:
+        for c in u["constituents"]:
+            print(f"fetching stock {c['symbol']} ({u['index']})")
+            try:
+                items.append(fetch_stock(c, u["index"]))
+            except Exception as e:  # keep the last good copy of a failing stock
+                failures.append("stock:" + c["symbol"])
+                print(f"  FAILED {c['symbol']}: {e}", file=sys.stderr)
+                if c["symbol"] in before:
+                    items.append({**_expand(before[c["symbol"]], [], []), "industry": c["industry"], "name": c["name"], "index": u["index"]})
+            time.sleep(0.3)
+
+    months = sorted({d for it in items for d in it["_monthly"]})[-STOCK_MONTHS:]
+    sessions = sorted({d for it in items for d in it["_daily"]})[-STOCK_SESSIONS:]
+    out = []
+    for it in items:
+        mc = [it["_monthly"].get(m) for m in months]
+        dc = [it["_daily"].get(d) for d in sessions]
+        out.append({k: v for k, v in it.items() if not k.startswith("_") and k not in ("mc", "dc")} | {"mc": mc, "dc": dc})
+    return {"currency": "INR", "months": months, "sessions": sessions, "items": out}
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", default=str(ROOT / "tools" / "indices.json"))
+    parser.add_argument("--out", default=str(ROOT / "shared-data" / "dataset.json"))
+    parser.add_argument("--seed", help="also copy the result here (the app's bundled offline dataset)")
+    args = parser.parse_args()
+
+    out = Path(args.out)
+    config = json.loads(Path(args.config).read_text(encoding="utf-8"))
+    existing = load_existing(out)
+    dataset = build(config, existing)
+
+    if existing and content_key(existing) == content_key(dataset):
+        print(f"no data changes; staying at version {existing['version']}")
+        return 0
+    # Versions must only ever increase, even across schema changes, or apps ignore the file.
+    try:
+        last_version = int(json.loads(out.read_text(encoding="utf-8")).get("version", 0))
+    except (OSError, ValueError):
+        last_version = 0
+    dataset["version"] = last_version + 1
+
+    encoded = json.dumps(dataset, separators=(",", ":"), ensure_ascii=False)
+    out.write_text(encoded + "\n", encoding="utf-8")
+    if args.seed:
+        Path(args.seed).write_text(encoded + "\n", encoding="utf-8")
+    print(f"wrote version {dataset['version']} ({len(dataset['indices'])} indices, "
+          f"latest session {dataset['updatedAt']}, {len(encoded) // 1024} KB) -> {out}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
