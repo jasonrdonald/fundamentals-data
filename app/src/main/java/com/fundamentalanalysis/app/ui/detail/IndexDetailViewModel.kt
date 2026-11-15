@@ -14,6 +14,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -30,6 +31,9 @@ sealed interface IndexDetailUiState {
         val index: AnalyzedIndex,
         val composition: Composition?,
         val range: ChartRange,
+        /** Year x month tables precomputed by the dataset pipeline. */
+        val calendars: Map<com.fundamentalanalysis.app.domain.model.CalendarKind, com.fundamentalanalysis.app.domain.analysis.CalendarTable> = emptyMap(),
+        val historyReady: Boolean = true,
     ) : IndexDetailUiState
 }
 
@@ -48,10 +52,16 @@ class IndexDetailViewModel @Inject constructor(
         observeIndices.one(symbol),
         market.observeComposition(),
         range,
-    ) { index, composition, r ->
+        market.observePrecomputed(),
+        market.observeAvailability(),
+    ) { index, composition, r, pre, availability ->
         if (index == null) IndexDetailUiState.NotFound
-        else IndexDetailUiState.Ready(index, composition?.takeIf { it.indexSymbol == symbol }, r)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), IndexDetailUiState.Loading)
+        else IndexDetailUiState.Ready(
+            index, composition?.takeIf { it.indexSymbol == symbol }, r,
+            calendars = pre.calendars.filterKeys { it.first == symbol }.mapKeys { it.key.second },
+            historyReady = availability.historyReady,
+        )
+    }.flowOn(kotlinx.coroutines.Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), IndexDetailUiState.Loading)
 
     fun onRangeChange(value: ChartRange) {
         savedStateHandle[KEY_RANGE] = value

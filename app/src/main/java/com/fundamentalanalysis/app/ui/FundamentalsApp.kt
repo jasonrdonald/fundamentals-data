@@ -31,6 +31,8 @@ import com.fundamentalanalysis.app.ui.navigation.IndicesRoute
 import com.fundamentalanalysis.app.ui.navigation.IndexDetailRoute
 import com.fundamentalanalysis.app.ui.navigation.CompareRoute
 import com.fundamentalanalysis.app.ui.navigation.DashboardRoute
+import com.fundamentalanalysis.app.ui.navigation.DataRoute
+import com.fundamentalanalysis.app.ui.data.DataScreen
 import com.fundamentalanalysis.app.ui.navigation.ReportsRoute
 import com.fundamentalanalysis.app.ui.navigation.StockDetailRoute
 import com.fundamentalanalysis.app.ui.navigation.StocksRoute
@@ -86,7 +88,8 @@ fun FundamentalsApp() {
             startDestination = DashboardRoute,
             modifier = Modifier.padding(innerPadding),
         ) {
-            composable<DashboardRoute> { DashboardScreen(onOpenIndex = openIndex) }
+            composable<DashboardRoute> { DashboardScreen(onOpenIndex = openIndex, onOpenData = { navController.navigate(DataRoute) }) }
+            composable<DataRoute> { DataScreen(onBack = { navController.popBackStack() }) }
             composable<IndicesRoute> { IndicesScreen(onOpenIndex = openIndex) }
             composable<CompareRoute> { CompareScreen(onOpenIndex = openIndex) }
             composable<ReportsRoute> { ReportsScreen(onOpenIndex = openIndex) }

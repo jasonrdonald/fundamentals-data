@@ -38,6 +38,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalContext
 import com.fundamentalanalysis.app.domain.analysis.CalendarTables
+import com.fundamentalanalysis.app.domain.analysis.CalendarTable
+import com.fundamentalanalysis.app.domain.model.CalendarKind
 import com.fundamentalanalysis.app.domain.analysis.IndexAnalyticsCalculator
 import com.fundamentalanalysis.app.domain.analysis.ValuationMeasure
 import com.fundamentalanalysis.app.ui.components.CalendarTableView
@@ -121,9 +123,15 @@ private fun DetailContent(state: IndexDetailUiState.Ready, onRange: (ChartRange)
         item { SectionCard("Momentum, volume & risk") { MomentumPanel(idx) } }
         if (a.monthly.size > 1) {
             item { MonthlyChartCard(a.monthly) }
-            if (idx.symbol == HEADLINE_INDEX) item { ReturnsByYearCard(idx) }
-            if (idx.index.valuation.isNotEmpty()) item { ValuationByYearCard(idx) }
-            item { SectionCard("Month-on-month", subtitle = "Newest first · MTD = month to date") { MonthlyTable(a.monthly) } }
+            if (idx.symbol == HEADLINE_INDEX) item { ReturnsByYearCard(idx, state.calendars[CalendarKind.RETURNS]) }
+            val valuation = ValuationMeasure.entries.mapNotNull { m -> state.calendars[m.kind]?.let { m to it } }.toMap()
+            if (valuation.isNotEmpty() || idx.index.valuation.isNotEmpty()) item { ValuationByYearCard(idx, valuation) }
+            item {
+                SectionCard(
+                    "Month-on-month",
+                    subtitle = "Newest first · MTD = month to date" + if (!state.historyReady) " · older months are still loading" else "",
+                ) { MonthlyTable(a.monthly) }
+            }
         }
         if (idx.index.daily.any { (it.volume ?: 0) > 0 }) {
             item { VolumeCard(idx) }
@@ -187,9 +195,10 @@ private fun MonthlyChartCard(monthly: List<MonthlyMove>) {
 }
 
 @Composable
-private fun ReturnsByYearCard(idx: AnalyzedIndex) {
+private fun ReturnsByYearCard(idx: AnalyzedIndex, precomputed: CalendarTable?) {
     val context = LocalContext.current
-    val table = remember(idx.index) { CalendarTables.monthlyReturns(idx.index.monthly, idx.index.daily.lastOrNull()?.date) }
+    // Precomputed by the pipeline from the full history, so it is complete before history loads.
+    val table = precomputed ?: remember(idx.index) { CalendarTables.monthlyReturns(idx.index.monthly, idx.index.daily.lastOrNull()?.date) }
     val first = table.rows.lastOrNull()?.year
     SectionCard(
         "Performance by year",
@@ -214,12 +223,11 @@ private fun ReturnsByYearCard(idx: AnalyzedIndex) {
 }
 
 @Composable
-private fun ValuationByYearCard(idx: AnalyzedIndex) {
+private fun ValuationByYearCard(idx: AnalyzedIndex, precomputed: Map<ValuationMeasure, CalendarTable>) {
     val context = LocalContext.current
     var measure by rememberSaveable { mutableStateOf(ValuationMeasure.PE) }
     val latest = idx.index.daily.lastOrNull()?.date
-    val table = remember(idx.index, measure) { CalendarTables.valuation(idx.index.valuation, measure, latest) }
-    val current = idx.index.valuation.lastOrNull()
+    val table = precomputed[measure] ?: remember(idx.index, measure) { CalendarTables.valuation(idx.index.valuation, measure, latest) }
     val format: (Double) -> String = if (measure == ValuationMeasure.DIVIDEND_YIELD) {
         { String.format(Locale.US, "%.2f", it) }
     } else {
@@ -239,21 +247,15 @@ private fun ValuationByYearCard(idx: AnalyzedIndex) {
                 ) { Text(m.short, maxLines = 1) }
             }
         }
-        if (current != null) {
-            val value = when (measure) {
-                ValuationMeasure.PE -> current.pe
-                ValuationMeasure.PB -> current.pb
-                ValuationMeasure.DIVIDEND_YIELD -> current.dividendYield
-            }
-            val values = idx.index.valuation.mapNotNull {
-                when (measure) {
-                    ValuationMeasure.PE -> it.pe
-                    ValuationMeasure.PB -> it.pb
-                    ValuationMeasure.DIVIDEND_YIELD -> it.dividendYield
-                }
-            }
+        // Summary from the table's month-end cells (newest row first, so the first value found is the latest).
+        val latestCell = table.rows.firstNotNullOfOrNull { r ->
+            r.months.indexOfLast { it != null }.takeIf { it >= 0 }?.let { m -> Triple(r.year, m, r.months[m]!!) }
+        }
+        val values = table.rows.flatMap { r -> r.months.filterNotNull() }
+        if (latestCell != null) {
+            val (year, month, value) = latestCell
             Text(
-                "Latest ${value?.let(format) ?: "—"} on ${Fmt.day(current.date)} · range ${values.minOrNull()?.let(format)}–${values.maxOrNull()?.let(format)}" +
+                "Latest ${format(value)} (${Fmt.month(java.time.LocalDate.of(year, month + 1, 1))}) · range ${values.minOrNull()?.let(format)}–${values.maxOrNull()?.let(format)}" +
                     " · median ${values.sorted().let { s -> if (s.isEmpty()) "—" else format(s[s.size / 2]) }}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

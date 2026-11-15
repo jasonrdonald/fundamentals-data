@@ -2,52 +2,56 @@ package com.fundamentalanalysis.app.data.remote
 
 import android.content.Context
 import com.fundamentalanalysis.app.BuildConfig
-import com.fundamentalanalysis.app.data.remote.dto.DatasetDto
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.serialization.json.Json
+import okhttp3.ResponseBody
 import retrofit2.http.GET
+import retrofit2.http.Header
 import retrofit2.http.Url
 import javax.inject.Inject
 import javax.inject.Singleton
 
 interface DatasetApi {
+    /** Raw bytes, so the app can verify a part's SHA-256 before using it. */
     @GET
-    suspend fun fetchDataset(@Url url: String): DatasetDto
+    suspend fun fetch(@Url url: String, @Header("Cache-Control") cacheControl: String? = null): ResponseBody
+}
+
+/**
+ * Where dataset files come from: the manifest, then each part named in it. Both sources return
+ * raw bytes; the sync engine checks them against the manifest's SHA-256.
+ */
+interface DatasetFileSource {
+    suspend fun manifest(revalidate: Boolean = false): ByteArray
+    suspend fun file(name: String): ByteArray
 }
 
 /** The shared, read-only dataset every install reads. No authentication. */
-interface RemoteDatasetSource {
+interface RemoteDatasetSource : DatasetFileSource {
     val isConfigured: Boolean
-    suspend fun fetch(): DatasetDto
 }
 
 @Singleton
 class HttpRemoteDatasetSource @Inject constructor(
     private val api: DatasetApi,
 ) : RemoteDatasetSource {
-    private val url: String = BuildConfig.DATASET_URL.trim()
-    override val isConfigured: Boolean get() = url.isNotEmpty()
-    override suspend fun fetch(): DatasetDto = api.fetchDataset(url)
+    private val manifestUrl: String = BuildConfig.MANIFEST_URL.trim()
+    override val isConfigured: Boolean get() = manifestUrl.isNotEmpty()
+
+    // "no-cache" still uses the HTTP cache, but revalidates (ETag): an unchanged file costs a 304.
+    override suspend fun manifest(revalidate: Boolean): ByteArray =
+        api.fetch(manifestUrl, if (revalidate) "no-cache" else null).use { it.bytes() }
+
+    override suspend fun file(name: String): ByteArray =
+        api.fetch(manifestUrl.substringBeforeLast('/') + "/" + name).use { it.bytes() }
 }
 
-/** Sample dataset shipped inside the APK so the app is useful offline on first launch. */
-interface SeedDatasetSource {
-    /** Version of the bundled file, known without parsing it. */
-    val version: Int
-    suspend fun load(): DatasetDto
-}
+/** The same files shipped inside the APK (assets/seed), so the app works offline from first launch. */
+interface SeedDatasetSource : DatasetFileSource
 
 @Singleton
 class AssetSeedDatasetSource @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val json: Json,
 ) : SeedDatasetSource {
-    override val version: Int = BuildConfig.SEED_DATASET_VERSION
-
-    override suspend fun load(): DatasetDto =
-        context.assets.open(SEED_FILE).bufferedReader().use { json.decodeFromString(it.readText()) }
-
-    private companion object {
-        const val SEED_FILE = "seed_dataset.json"
-    }
+    override suspend fun manifest(revalidate: Boolean): ByteArray = file("manifest.json")
+    override suspend fun file(name: String): ByteArray = context.assets.open("seed/$name").use { it.readBytes() }
 }

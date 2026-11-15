@@ -4,6 +4,7 @@ import com.fundamentalanalysis.app.domain.model.AnalyzedStock
 import com.fundamentalanalysis.app.domain.model.Bar
 import com.fundamentalanalysis.app.domain.model.MarketIndex
 import com.fundamentalanalysis.app.domain.model.Period
+import com.fundamentalanalysis.app.domain.model.SectorStat
 import com.fundamentalanalysis.app.domain.model.Stock
 import com.fundamentalanalysis.app.domain.model.StockFactor
 import com.fundamentalanalysis.app.domain.model.StockFormat
@@ -130,19 +131,31 @@ data class RankedStock(val rank: Int, val stock: AnalyzedStock, val value: Doubl
 
 object StockReports {
 
-    fun sectorPerformance(stocks: List<AnalyzedStock>, period: Period): List<SectorPerformance> =
-        stocks.groupBy { it.stock.industry }.map { (sector, members) ->
+    /**
+     * Sectors of [stocks] for [period]. When [precomputed] aggregates (from the dataset pipeline)
+     * are given, their counts and averages are used; otherwise they are computed here.
+     */
+    fun sectorPerformance(
+        stocks: List<AnalyzedStock>,
+        period: Period,
+        precomputed: List<SectorStat> = emptyList(),
+    ): List<SectorPerformance> {
+        val stats = precomputed.associateBy { it.sector }
+        return stocks.groupBy { it.stock.industry }.map { (sector, members) ->
             val measured = members.filter { it.metrics.returns[period] != null }
             val bench = members.firstNotNullOfOrNull { it.metrics.benchmarkReturns[period] }
+            val stat = stats[sector]
             SectorPerformance(
                 sector = sector,
                 stocks = members.sortedByDescending { it.metrics.returns[period] ?: Double.NEGATIVE_INFINITY },
-                outperformers = measured.count { (it.metrics.excess(period) ?: 0.0) > 0 },
-                measured = measured.size,
-                averageReturn = measured.mapNotNull { it.metrics.returns[period] }.takeIf { it.isNotEmpty() }?.average(),
-                benchmarkReturn = bench,
+                outperformers = stat?.outperformers ?: measured.count { (it.metrics.excess(period) ?: 0.0) > 0 },
+                measured = stat?.measured ?: measured.size,
+                averageReturn = if (stat != null) stat.averageReturn
+                else measured.mapNotNull { it.metrics.returns[period] }.takeIf { it.isNotEmpty() }?.average(),
+                benchmarkReturn = stat?.benchmarkReturn ?: bench,
             )
         }.sortedWith(compareByDescending<SectorPerformance> { it.outperformShare }.thenByDescending { it.averageReturn ?: Double.NEGATIVE_INFINITY })
+    }
 
     /**
      * Top (best) or bottom (worst) [count] stocks for a factor, using the factor's primary measure

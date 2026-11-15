@@ -5,10 +5,12 @@ import androidx.room.RoomDatabase
 
 @Database(
     entities = [
-        IndexEntity::class, BarEntity::class, ValuationEntity::class, ConstituentEntity::class, WatchlistEntity::class,
-        StockEntity::class, StockFinancialEntity::class,
+        IndexEntity::class, IndexSeriesEntity::class, IndexValuationEntity::class, ConstituentEntity::class,
+        StockEntity::class, StockSeriesEntity::class, StockFinancialsEntity::class,
+        AnalyticsEntity::class, DatasetPartEntity::class, SyncEventEntity::class, MetaEntity::class,
+        WatchlistEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {

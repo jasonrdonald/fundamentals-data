@@ -9,3 +9,4 @@ import kotlinx.serialization.Serializable
 @Serializable data object ReportsRoute
 @Serializable data class IndexDetailRoute(val symbol: String)
 @Serializable data class StockDetailRoute(val symbol: String)
+@Serializable data object DataRoute

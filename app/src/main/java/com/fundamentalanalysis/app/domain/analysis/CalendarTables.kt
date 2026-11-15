@@ -1,6 +1,7 @@
 package com.fundamentalanalysis.app.domain.analysis
 
 import com.fundamentalanalysis.app.domain.model.Bar
+import com.fundamentalanalysis.app.domain.model.CalendarKind
 import com.fundamentalanalysis.app.domain.model.ValuationPoint
 import java.time.LocalDate
 import java.util.Locale
@@ -23,10 +24,10 @@ data class CalendarTable(
     val monthToDate: Pair<Int, Int>?,
 )
 
-enum class ValuationMeasure(val label: String, val short: String) {
-    PE("Price / earnings", "P/E"),
-    PB("Price / book", "P/B"),
-    DIVIDEND_YIELD("Dividend yield", "Div. yield"),
+enum class ValuationMeasure(val label: String, val short: String, val kind: CalendarKind) {
+    PE("Price / earnings", "P/E", CalendarKind.PE),
+    PB("Price / book", "P/B", CalendarKind.PB),
+    DIVIDEND_YIELD("Dividend yield", "Div. yield", CalendarKind.DIVIDEND_YIELD),
 }
 
 object CalendarTables {

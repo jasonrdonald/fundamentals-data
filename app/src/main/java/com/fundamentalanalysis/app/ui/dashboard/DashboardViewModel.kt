@@ -7,7 +7,7 @@ import com.fundamentalanalysis.app.domain.model.Composition
 import com.fundamentalanalysis.app.domain.model.IndexCategory
 import com.fundamentalanalysis.app.domain.model.Period
 import com.fundamentalanalysis.app.domain.model.RefreshResult
-import com.fundamentalanalysis.app.domain.model.SyncStatus
+import com.fundamentalanalysis.app.domain.model.DataStatus
 import com.fundamentalanalysis.app.domain.repository.MarketRepository
 import com.fundamentalanalysis.app.domain.usecase.ObserveAnalyzedIndicesUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -34,7 +35,7 @@ data class DashboardUiState(
     val declining: Int = 0,
     val watchlist: List<AnalyzedIndex> = emptyList(),
     val composition: Composition? = null,
-    val sync: SyncStatus? = null,
+    val data: DataStatus? = null,
     val refreshing: Boolean = false,
 ) {
     val isEmpty: Boolean get() = !loading && headline == null
@@ -54,10 +55,10 @@ class DashboardViewModel @Inject constructor(
     val state: StateFlow<DashboardUiState> = combine(
         observeIndices(),
         repository.observeComposition(),
-        repository.observeSyncStatus(),
+        repository.observeDataStatus(),
         refreshing,
         sectorPeriod,
-    ) { indices, composition, sync, isRefreshing, period ->
+    ) { indices, composition, data, isRefreshing, period ->
         val equity = indices.filter { it.index.category != IndexCategory.VOLATILITY }
         val dayChanges = equity.mapNotNull { it.analytics.returns[Period.D1] }
         DashboardUiState(
@@ -71,10 +72,10 @@ class DashboardViewModel @Inject constructor(
             declining = dayChanges.count { it < 0 },
             watchlist = indices.filter { it.isWatchlisted },
             composition = composition,
-            sync = sync,
+            data = data,
             refreshing = isRefreshing,
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardUiState())
+    }.flowOn(kotlinx.coroutines.Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardUiState())
 
     fun onSectorPeriodChange(period: Period) {
         sectorPeriod.value = period
@@ -85,7 +86,7 @@ class DashboardViewModel @Inject constructor(
         viewModelScope.launch {
             refreshing.value = true
             val message = when (val result = repository.refresh()) {
-                is RefreshResult.Updated -> "Updated to dataset v${result.version} (${result.indexCount} indices)"
+                is RefreshResult.Updated -> "Updated to v${result.version}: ${result.parts.joinToString { it.label.lowercase() }}"
                 RefreshResult.UpToDate -> "Already up to date"
                 RefreshResult.NotConfigured -> "No shared data source configured — showing bundled data"
                 is RefreshResult.Failed -> "Refresh failed: ${result.message}"

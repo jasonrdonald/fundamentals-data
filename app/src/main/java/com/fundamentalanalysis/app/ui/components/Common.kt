@@ -1,5 +1,6 @@
 package com.fundamentalanalysis.app.ui.components
 
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -131,5 +132,22 @@ fun KeyValueRow(label: String, value: String, modifier: Modifier = Modifier, val
     Row(modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = valueColor)
+    }
+}
+
+/** Placeholder for views that need the history part, which loads in the background. */
+@Composable
+fun HistoryPending(what: String, modifier: Modifier = Modifier) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier.fillMaxWidth().padding(vertical = 16.dp),
+    ) {
+        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+        Text(
+            "Loading older history for $what… it appears here automatically.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 12.dp),
+        )
     }
 }

@@ -20,13 +20,12 @@ android {
         versionCode = 2
         versionName = "1.1.0"
 
-        val datasetUrl = providers.gradleProperty("dataset.url").getOrElse("")
-        buildConfigField("String", "DATASET_URL", "\"$datasetUrl\"")
-
-        // Version of the bundled dataset, so startup can skip parsing it when nothing changed.
-        val seedFile = layout.projectDirectory.file("src/main/assets/seed_dataset.json").asFile
-        val seedVersion = Regex("\"version\"\\s*:\\s*(\\d+)").find(seedFile.readText())?.groupValues?.get(1) ?: "0"
-        buildConfigField("int", "SEED_DATASET_VERSION", seedVersion)
+        // Manifest of the shared dataset (schema 4); parts are fetched relative to it.
+        val manifestUrl = providers.gradleProperty("dataset.manifestUrl").getOrElse("")
+        buildConfigField("String", "MANIFEST_URL", "\"$manifestUrl\"")
+        // Public page where the dataset pipeline can be run by hand (shown on the Data page).
+        val pipelineUrl = providers.gradleProperty("dataset.pipelineUrl").getOrElse("")
+        buildConfigField("String", "PIPELINE_URL", "\"$pipelineUrl\"")
     }
 
     // Release signing key details come from keystore.properties (gitignored) when present, so the

@@ -8,7 +8,8 @@ Sources (open endpoints, no login, no cookies):
 The dataset holds raw primary data only; the app computes performance, momentum and
 volume analytics from it. Standard library only, so it runs anywhere Python 3.9+ exists.
 
-Usage:  python tools/build_dataset.py [--out shared-data/dataset.json] [--seed app/src/main/assets/seed_dataset.json]
+Usage:  python tools/build_dataset.py [--out shared-data/dataset.json]
+        then python tools/derive_parts.py (parts + precomputed analytics the app reads)
 """
 from __future__ import annotations
 
@@ -444,7 +445,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default=str(ROOT / "tools" / "indices.json"))
     parser.add_argument("--out", default=str(ROOT / "shared-data" / "dataset.json"))
-    parser.add_argument("--seed", help="also copy the result here (the app's bundled offline dataset)")
+    parser.add_argument("--seed", help="also copy the result here (the app now bundles the derived parts instead; see derive_parts.py --seed-dir)")
     args = parser.parse_args()
 
     out = Path(args.out)

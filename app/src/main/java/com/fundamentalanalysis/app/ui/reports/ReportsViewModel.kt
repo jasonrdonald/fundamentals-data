@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import javax.inject.Inject
@@ -79,7 +80,7 @@ class ReportsViewModel @Inject constructor(
             monthly = ReportBuilder.monthlyMatrix(equity, months = 12),
             composition = comp,
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ReportsUiState())
+    }.flowOn(kotlinx.coroutines.Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ReportsUiState())
 
     fun onTypeChange(type: ReportType) = selection.update { it.copy(type = type) }
     fun onMetricChange(metric: Metric) = selection.update { it.copy(metric = metric) }

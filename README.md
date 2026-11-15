@@ -72,23 +72,57 @@ Not included yet:
   - every equity index ranked for the chosen window, with the compared ones marked
   - a side-by-side metric table
 - **Reports:** a ranking by any metric, a trailing-returns matrix, a 12-month heat table of monthly returns, and the industry classification. Each report exports to CSV.
+- **Data** (the storage icon on the Overview, or tap the dataset line under the title):
+  - what is on the device vs what is published, and when it was last checked
+  - **Check for updates**, **Download all again** and **Reset to bundled** (the watchlist and settings are kept)
+  - the load order, with each part's version, size, record count, origin and load time
+  - the precomputed analytics tables and their row counts
+  - how the data is updated from public sources, with a link to run the pipeline on GitHub
+  - an update timeline: published pipeline runs (what changed, failures) and this device's checks, downloads and loads
 
 ## Architecture
 ```
-tools/build_dataset.py   pipeline: public sources -> shared-data/dataset.json (stdlib Python)
-.github/workflows/       runs the pipeline every weekday after market close and commits changes
-shared-data/dataset.json the shared dataset (schemaVersion 2) every install downloads
+tools/build_dataset.py   pipeline step 1: public sources -> shared-data/dataset.json (stdlib Python)
+tools/derive_parts.py    pipeline step 2: dataset.json -> shared-data/v4/ (parts + precomputed analytics)
+.github/workflows/       runs both every weekday after market close and commits changes
+shared-data/v4/          what the app downloads: manifest.json, analytics.json, core.json, history.json
+shared-data/dataset.json the full dataset (schemaVersion 3), still read by app versions up to 1.1
 app/                     Android app
-  ui/       Compose screens + @HiltViewModel (StateFlow UiState per screen)
-  domain/   models, pure analytics (IndexAnalyticsCalculator, ReportBuilder), use case
-  data/     Room (single source of truth), DataStore (sync metadata),
-            Retrofit + kotlinx.serialization, bundled seed asset
+  ui/       Compose screens + @HiltViewModel (StateFlow UiState per screen, built off the main thread)
+  domain/   models, analytics calculators (reference implementation), use cases
+  data/     Room (single source of truth), sync engine, Retrofit + kotlinx.serialization,
+            bundled seed (assets/seed = a copy of shared-data/v4)
   di/       Hilt modules
 ```
-How data flows through the app:
-- The app is offline-first. On first launch it loads the bundled `seed_dataset.json` into Room.
-- On every launch and on pull-to-refresh, it downloads the shared dataset. It replaces its local copy only when `version` is higher than the one it has.
-- It ignores any dataset whose `schemaVersion` is newer than it supports, so a future format change can't crash older installs.
+
+### Loading data without freezing the app
+The dataset is split into parts that load in order:
+
+| # | Part | Size | Contents | When |
+|---|---|---|---|---|
+| 1 | analytics | ~230 KB | Precomputed metrics for every index and stock, benchmark returns, sector aggregates (universe × period × sector) and the Nifty 50 calendar tables | Before the first screen |
+| 2 | core | ~400 KB | 300 daily sessions and the last 13 months per index, constituents, stock list with the last 13 month-end closes | Before the first screen |
+| 3 | history | ~960 KB | Full monthly history, valuation history, 10 years of stock month-end closes, stock daily closes, financials | In the background |
+
+How it works:
+- **First launch** stores parts 1 and 2 from the APK (about 0.3 s on an emulator), shows the app, then loads part 3 in the background. Every screen works from parts 1 and 2. Views that need older data (3Y/5Y comparisons, 3Y–10Y stock charts, a stock's year table and financials) show "Loading older history…" until part 3 lands, then fill in by themselves.
+- **Every launch** downloads only `manifest.json` (about 2 KB, revalidated with its ETag) and then only the parts whose version changed. Parts 1 and 2 are swapped in one transaction so screens never mix two versions. Each file is checked against the manifest's SHA-256 before use.
+- **Precomputed analytics:** metrics, group-bys and calendar tables are calculated once by the pipeline instead of on every phone at every launch. The app's Kotlin calculators remain the reference: `PublishedDatasetTest` recomputes every precomputed number from the raw data and fails if Python and Kotlin disagree.
+- **Storage:** price history is packed into one database row per series (`BarCodec`, `PriceCodec`); writing one row per bar took about 3 s for the indices alone. Lists never load price history.
+- **No main-thread work:** repository mapping and every screen's state are built on background dispatchers.
+
+Measured on the emulator (release build):
+
+| | Before | After |
+|---|---|---|
+| First launch, until the Overview shows data | ~6.5 s blocked (parse 0.9 s + write 5.6 s) | ~0.3 s for parts 1–2; history follows in ~0.3 s in the background |
+| Every launch | downloads and parses the full 1.5 MB dataset (~1.9 s) | one ~2 KB manifest request; parts only when they change |
+| Opening Stocks | 0.5 s of stock analytics | none (precomputed) |
+
+Data flow:
+- The app is offline-first: Room is the single source of truth, filled by `DatasetSync`.
+- It ignores a manifest whose `schemaVersion` is newer than it supports, so a future format change can't crash older installs.
+- Upgrading from 1.1 migrates the database (schema 5 to 6) and keeps the watchlist.
 
 Stack: Kotlin 2.4, AGP 9.5, Compose BOM 2026.09, Material 3, type-safe Navigation, Hilt, Room, DataStore, Retrofit 3, OkHttp 5. minSdk 26, target/compile 37.
 
@@ -101,25 +135,29 @@ Run it locally:
 ```bash
 python tools/build_dataset.py
 ```
-This also refreshes the dataset bundled inside the app:
 ```bash
-python tools/build_dataset.py --seed app/src/main/assets/seed_dataset.json
+python tools/derive_parts.py
+```
+To also refresh the copy bundled inside the app (do this before building a release):
+```bash
+python tools/derive_parts.py --seed-dir app/src/main/assets/seed
 ```
 
 How the pipeline behaves:
-- It increases `version` only when the data actually changed.
+- It increases `version` only when the data actually changed. The derive step gives each part its own version, so an update that only changes recent prices doesn't make phones download the history again.
 - If a single index fails to download, it keeps the last good copy of that index and lists it under `failures`.
 - It stops without writing anything if the Nifty 50 can't be fetched.
-- [`update-dataset.yml`](.github/workflows/update-dataset.yml) runs it at 17:00 IST every weekday and commits any change. You can also start it by hand from the repo's Actions tab.
+- [`update-dataset.yml`](.github/workflows/update-dataset.yml) runs both steps at 17:00 IST every weekday and commits any change. You can also start it by hand from the repo's Actions tab, or from the app's Data page.
+- Each run that changes something is added to the manifest's `history`, which the app shows as the pipeline timeline.
 
-Check that the file matches what the app expects. This parses it with the app's own decoder and checks dates, OHLC consistency and history length:
+Check that the published files match what the app expects. This parses them with the app's own decoder, checks sizes and checksums against the manifest, dates, OHLC consistency and history length, and compares every precomputed number with the app's calculators:
 ```bash
-./gradlew :app:testDebugUnitTest --tests "*RepositorySyncTest*"
+./gradlew :app:testDebugUnitTest --tests "*PublishedDatasetTest*"
 ```
 
-The app reads the dataset from this repo through `dataset.url` in `gradle.properties`:
+The app reads the dataset from this repo through `dataset.manifestUrl` in `gradle.properties`; parts are fetched from the same folder:
 ```properties
-dataset.url=https://raw.githubusercontent.com/jasonrdonald/fundamentals-data/main/shared-data/dataset.json
+dataset.manifestUrl=https://raw.githubusercontent.com/jasonrdonald/fundamentals-data/main/shared-data/v4/manifest.json
 ```
 This repository is public, so anyone can read the dataset. Don't commit private data.
 

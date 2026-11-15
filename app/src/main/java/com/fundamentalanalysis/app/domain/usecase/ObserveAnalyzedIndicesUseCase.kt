@@ -4,6 +4,8 @@ import com.fundamentalanalysis.app.di.ApplicationScope
 import com.fundamentalanalysis.app.di.DefaultDispatcher
 import com.fundamentalanalysis.app.domain.analysis.IndexAnalyticsCalculator
 import com.fundamentalanalysis.app.domain.model.AnalyzedIndex
+import com.fundamentalanalysis.app.domain.model.IndexAnalytics
+import com.fundamentalanalysis.app.domain.model.MarketIndex
 import com.fundamentalanalysis.app.domain.repository.MarketRepository
 import com.fundamentalanalysis.app.domain.repository.WatchlistRepository
 import kotlinx.coroutines.CoroutineDispatcher
@@ -19,9 +21,9 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Joins the shared dataset with the device-local watchlist and computes all analytics.
- * The result is computed once and shared by every screen (replayed to new subscribers), so
- * switching tabs does not re-read the database or recompute analytics.
+ * Joins the stored indices with the analytics precomputed by the dataset pipeline and the
+ * device-local watchlist. Only the cheap parts (latest session, monthly moves) are derived here;
+ * an index without a precomputed row falls back to the full calculator. Shared by every screen.
  */
 @Singleton
 class ObserveAnalyzedIndicesUseCase @Inject constructor(
@@ -30,10 +32,9 @@ class ObserveAnalyzedIndicesUseCase @Inject constructor(
     @DefaultDispatcher dispatcher: CoroutineDispatcher,
     @ApplicationScope scope: CoroutineScope,
 ) {
-    // Analytics depend only on market data; recompute them only when that changes.
-    private val analyzed = market.observeIndices()
-        .map { indices -> indices.map { it to IndexAnalyticsCalculator.calculate(it) } }
-        .flowOn(dispatcher)
+    private val analyzed = combine(market.observeIndices(), market.observePrecomputed()) { indices, pre ->
+        indices.map { index -> index to (pre.indices[index.symbol]?.let { complete(index, it) } ?: IndexAnalyticsCalculator.calculate(index)) }
+    }.flowOn(dispatcher)
 
     private val shared: Flow<List<AnalyzedIndex>> =
         combine(analyzed, watchlist.observeWatchlist()) { rows, watched ->
@@ -44,4 +45,9 @@ class ObserveAnalyzedIndicesUseCase @Inject constructor(
 
     fun one(symbol: String): Flow<AnalyzedIndex?> =
         shared.map { list -> list.firstOrNull { it.symbol == symbol } }.distinctUntilChanged()
+
+    private fun complete(index: MarketIndex, pre: IndexAnalytics) = pre.copy(
+        latest = IndexAnalyticsCalculator.latestSession(index.daily),
+        monthly = IndexAnalyticsCalculator.monthlyMoves(index.monthly, index.daily.lastOrNull()?.date),
+    )
 }

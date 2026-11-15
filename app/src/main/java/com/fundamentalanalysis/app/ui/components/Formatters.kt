@@ -91,6 +91,12 @@ object Fmt {
     fun day(date: LocalDate?): String = date?.format(dayFormat) ?: "—"
     fun month(date: LocalDate): String = date.format(monthFormat)
 
+    fun bytes(n: Long): String = when {
+        n >= 1024 * 1024 -> String.format(Locale.US, "%.1f MB", n / 1048576.0)
+        n >= 1024 -> String.format(Locale.US, "%.0f KB", n / 1024.0)
+        else -> "$n B"
+    }
+
     fun dateTime(millis: Long?): String =
         if (millis == null) "never" else DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(millis))
 }

@@ -59,6 +59,7 @@ import com.fundamentalanalysis.app.ui.components.Fmt
 import com.fundamentalanalysis.app.ui.components.KeyValueRow
 import com.fundamentalanalysis.app.ui.components.LineChart
 import com.fundamentalanalysis.app.ui.components.LoadingState
+import com.fundamentalanalysis.app.ui.components.HistoryPending
 import com.fundamentalanalysis.app.ui.components.ScreenScaffold
 import com.fundamentalanalysis.app.ui.components.SectionCard
 import com.fundamentalanalysis.app.ui.components.changeColor
@@ -68,6 +69,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -76,7 +78,7 @@ import javax.inject.Inject
 sealed interface StockDetailUiState {
     data object Loading : StockDetailUiState
     data object NotFound : StockDetailUiState
-    data class Ready(val stock: AnalyzedStock, val benchmark: MarketIndex?) : StockDetailUiState
+    data class Ready(val stock: AnalyzedStock, val benchmark: MarketIndex?, val historyReady: Boolean = true) : StockDetailUiState
 }
 
 @HiltViewModel
@@ -88,10 +90,10 @@ class StockDetailViewModel @Inject constructor(
     val symbol: String = savedStateHandle.toRoute<StockDetailRoute>().symbol
 
     val state: StateFlow<StockDetailUiState> =
-        combine(observeStocks.one(symbol), market.observeIndices()) { stock, indices ->
+        combine(observeStocks.one(symbol), market.observeIndices(), market.observeAvailability()) { stock, indices, availability ->
             if (stock == null) StockDetailUiState.NotFound
-            else StockDetailUiState.Ready(stock, indices.firstOrNull { it.symbol == stock.stock.indexSymbol })
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StockDetailUiState.Loading)
+            else StockDetailUiState.Ready(stock, indices.firstOrNull { it.symbol == stock.stock.indexSymbol }, availability.historyReady)
+        }.flowOn(kotlinx.coroutines.Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StockDetailUiState.Loading)
 }
 
 @Composable
@@ -105,14 +107,14 @@ fun StockDetailScreen(onBack: () -> Unit, viewModel: StockDetailViewModel = hilt
             when (val s = state) {
                 StockDetailUiState.Loading -> LoadingState()
                 StockDetailUiState.NotFound -> EmptyState("This stock is not in the current dataset.")
-                is StockDetailUiState.Ready -> StockContent(s.stock, s.benchmark)
+                is StockDetailUiState.Ready -> StockContent(s.stock, s.benchmark, s.historyReady)
             }
         }
     }
 }
 
 @Composable
-private fun StockContent(st: AnalyzedStock, benchmark: MarketIndex?) {
+private fun StockContent(st: AnalyzedStock, benchmark: MarketIndex?, historyReady: Boolean) {
     val m = st.metrics
     val benchName = benchmark?.name ?: st.stock.indexSymbol
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxSize()) {
@@ -132,8 +134,11 @@ private fun StockContent(st: AnalyzedStock, benchmark: MarketIndex?) {
             }
         }
         item { VersusIndexCard(st, benchName) }
-        if (benchmark != null) item { RelativeChartCard(st, benchmark) }
+        if (benchmark != null) item { RelativeChartCard(st, benchmark, historyReady) }
         item { FactorsCard(st) }
+        if (!historyReady) {
+            item { SectionCard("Year-by-month returns and financials") { HistoryPending("this stock") } }
+        }
         if (st.stock.monthly.size > 12) item { YearTableCard(st) }
         if (st.stock.annual.isNotEmpty()) {
             item {
@@ -187,7 +192,7 @@ private val YEAR_SPANS = listOf(1, 3, 5, 10)
 private val monthLabel = DateTimeFormatter.ofPattern("MMM yy", Locale.ENGLISH)
 
 @Composable
-private fun RelativeChartCard(st: AnalyzedStock, benchmark: MarketIndex) {
+private fun RelativeChartCard(st: AnalyzedStock, benchmark: MarketIndex, historyReady: Boolean) {
     var years by rememberSaveable { mutableIntStateOf(5) }
     val (dates, stock, index) = remember(st.stock, benchmark, years) {
         val months = years * 12 + 1
@@ -199,7 +204,9 @@ private fun RelativeChartCard(st: AnalyzedStock, benchmark: MarketIndex) {
                 SegmentedButton(years == y, onClick = { years = y }, shape = SegmentedButtonDefaults.itemShape(i, YEAR_SPANS.size)) { Text("${y}Y") }
             }
         }
-        if (dates.size < 2) {
+        if (years > 1 && !historyReady) {
+            HistoryPending("${years}Y month-end closes")
+        } else if (dates.size < 2) {
             Text("Not enough shared history.", style = MaterialTheme.typography.bodySmall)
         } else {
             LineChart(

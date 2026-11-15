@@ -34,6 +34,9 @@ import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import java.util.concurrent.TimeUnit
+import java.io.File
+import okhttp3.Cache
+import com.fundamentalanalysis.app.data.local.MIGRATION_5_6
 import javax.inject.Qualifier
 import javax.inject.Singleton
 
@@ -82,7 +85,9 @@ object StorageModule {
     @Provides @Singleton
     fun database(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "fundamentals.db")
-            // The database is a cache of the shared dataset; on schema changes it is rebuilt from it.
+            // 5 -> 6 keeps the watchlist and rebuilds the dataset tables (refilled from the dataset).
+            .addMigrations(MIGRATION_5_6)
+            // Older schemas only cached the shared dataset; they are rebuilt from it.
             .fallbackToDestructiveMigration(dropAllTables = true)
             .build()
 
@@ -95,17 +100,15 @@ object StorageModule {
     @Provides @Singleton @SettingsStore
     fun settingsDataStore(@ApplicationContext context: Context): DataStore<Preferences> =
         PreferenceDataStoreFactory.create { context.preferencesDataStoreFile("settings") }
-
-    @Provides @Singleton
-    fun preferencesDataStore(@ApplicationContext context: Context): DataStore<Preferences> =
-        PreferenceDataStoreFactory.create { context.preferencesDataStoreFile("sync") }
 }
 
 @Module
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
     @Provides @Singleton
-    fun okHttp(): OkHttpClient = OkHttpClient.Builder()
+    fun okHttp(@ApplicationContext context: Context): OkHttpClient = OkHttpClient.Builder()
+        // HTTP cache: an unchanged manifest is revalidated with its ETag (304) instead of re-downloaded.
+        .cache(Cache(File(context.cacheDir, "http"), 20L * 1024 * 1024))
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .apply {

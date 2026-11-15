@@ -1,0 +1,57 @@
+{
+ "schemaVersion": 4,
+ "version": 1,
+ "datasetVersion": 8,
+ "asOf": "2026-11-13",
+ "generatedAt": "2026-11-15T20:44:37Z",
+ "loadOrder": [
+  "analytics",
+  "core",
+  "history"
+ ],
+ "parts": [
+  {
+   "name": "analytics",
+   "file": "analytics.json",
+   "version": 1,
+   "bytes": 238289,
+   "sha256": "72ade37f757d72c91da4e528248e0f620dee14ddf0715689d9a82c9fb7f2b169",
+   "records": 561,
+   "description": "Precomputed metrics, sector aggregates and calendar tables"
+  },
+  {
+   "name": "core",
+   "file": "core.json",
+   "version": 1,
+   "bytes": 414358,
+   "sha256": "341be4ff299227e32d8cb4b42eef499a5ed57388758baf951e5543d93ecdb30e",
+   "records": 9447,
+   "description": "Latest 300 index sessions, last 13 months, constituents and stock list"
+  },
+  {
+   "name": "history",
+   "file": "history.json",
+   "version": 1,
+   "bytes": 981988,
+   "sha256": "4c34271b8e49dde1c73282c7b4f0e6c6f4ab14936a789d8667beab729d803835",
+   "records": 99237,
+   "description": "Full monthly history, valuation history, stock daily closes and financials"
+  }
+ ],
+ "history": [
+  {
+   "version": 1,
+   "datasetVersion": 8,
+   "generatedAt": "2026-11-15T20:44:37Z",
+   "asOf": "2026-11-13",
+   "changed": [
+    "analytics",
+    "core",
+    "history"
+   ],
+   "failures": [],
+   "indices": 19,
+   "stocks": 250
+  }
+ ]
+}

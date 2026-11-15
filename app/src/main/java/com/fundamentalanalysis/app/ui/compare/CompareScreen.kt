@@ -50,6 +50,7 @@ import com.fundamentalanalysis.app.ui.components.LineChart
 import com.fundamentalanalysis.app.ui.components.HorizontalBars
 import com.fundamentalanalysis.app.ui.components.GroupedBarChart
 import com.fundamentalanalysis.app.ui.components.LoadingState
+import com.fundamentalanalysis.app.ui.components.HistoryPending
 import com.fundamentalanalysis.app.ui.components.ScreenScaffold
 import com.fundamentalanalysis.app.ui.components.SectionCard
 import com.fundamentalanalysis.app.ui.components.changeColor
@@ -157,6 +158,10 @@ private fun RelativePerformanceCard(state: CompareUiState, onRange: (CompareRang
         subtitle = "Rebased to 100 at the start of the window · " + if (daily) "daily closes" else "month-end closes",
     ) {
         RangeSelector(range, onRange)
+        if (!daily && !state.historyReady) {
+            HistoryPending("${range.label} month-end closes")
+            return@SectionCard
+        }
         LineChart(
             xLabels = dates.map { if (daily) it.format(shortDay) else Fmt.month(it) },
             series = series,

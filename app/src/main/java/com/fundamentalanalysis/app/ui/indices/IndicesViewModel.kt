@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -50,7 +51,7 @@ class IndicesViewModel @Inject constructor(
             categories = all.map { it.index.category }.distinct().sortedBy { it.ordinal },
             indices = sorted + without,
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), IndicesUiState())
+    }.flowOn(kotlinx.coroutines.Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), IndicesUiState())
 
     fun onCategorySelected(category: IndexCategory?) = filters.update { it.copy(category = category) }
     fun onSortChange(metric: Metric) = filters.update { it.copy(sortBy = metric) }

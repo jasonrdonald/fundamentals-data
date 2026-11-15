@@ -41,8 +41,9 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * Activity-scoped startup: make sure local data exists (bundled dataset on first launch), then
- * pull the latest shared dataset in the background. The UI waits only for the first step.
+ * Activity-scoped startup: make sure recent data and analytics exist (bundled copy on first
+ * launch), then load history and check for updates in the background. The UI waits only for the
+ * first step.
  */
 @HiltViewModel
 class StartupViewModel @Inject constructor(
@@ -59,12 +60,14 @@ class StartupViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             try {
+                // Recent data + precomputed analytics: instant once stored, well under a second on first launch.
                 repository.ensureData()
             } finally {
                 // Even if the bundled data failed to load, show the app (screens show their own empty states).
                 _ready.value = true
             }
-            repository.refresh()
+            // History and the remote check continue in the background; screens update as parts land.
+            repository.startBackgroundSync()
         }
     }
 }

@@ -14,6 +14,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 
@@ -65,7 +66,9 @@ class StocksViewModel @Inject constructor(
 
     private val selection = savedState.getStateFlow(KEY, StockSelection())
 
-    val state: StateFlow<StocksUiState> = combine(observeStocks(), market.observeIndices(), selection) { allStocks, indices, sel ->
+    val state: StateFlow<StocksUiState> = combine(
+        observeStocks(), observeStocks.sectors(), market.observeIndices(), selection,
+    ) { allStocks, sectorStats, indices, sel ->
         val names = indices.associate { it.symbol to it.name }
         val order = ObserveAnalyzedStocksUseCase.UNIVERSE_ORDER
         val universes = allStocks.groupBy { it.stock.indexSymbol }
@@ -73,7 +76,10 @@ class StocksViewModel @Inject constructor(
             .sortedBy { order.indexOf(it.symbol).let { i -> if (i < 0) Int.MAX_VALUE else i } }
         val universe = universes.firstOrNull { it.symbol == sel.universe } ?: universes.firstOrNull()
         val stocks = allStocks.filter { it.stock.indexSymbol == universe?.symbol }
-        val sectors = StockReports.sectorPerformance(stocks, sel.period)
+        // Counts and averages come precomputed from the dataset; members are grouped locally for the lists.
+        val sectors = StockReports.sectorPerformance(
+            stocks, sel.period, sectorStats.filter { it.universe == universe?.symbol && it.period == sel.period },
+        )
         val q = sel.query.trim()
         val benchmark = stocks.firstNotNullOfOrNull { it.metrics.benchmarkReturns[sel.period] }
         val periodReturns = stocks.mapNotNull { s -> s.metrics.returns[sel.period]?.let { s to it } }
@@ -96,7 +102,7 @@ class StocksViewModel @Inject constructor(
                 .filter { q.isEmpty() || it.symbol.contains(q, true) || it.stock.name.contains(q, true) || it.stock.industry.contains(q, true) }
                 .sortedByDescending { it.stock.marketCapCr ?: 0.0 },
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StocksUiState())
+    }.flowOn(kotlinx.coroutines.Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StocksUiState())
 
     private fun update(change: (StockSelection) -> StockSelection) {
         savedState[KEY] = change(selection.value)

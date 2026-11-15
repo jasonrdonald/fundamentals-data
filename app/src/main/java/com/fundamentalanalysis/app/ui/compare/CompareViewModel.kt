@@ -11,6 +11,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 
@@ -49,6 +50,8 @@ data class CompareUiState(
     val mode: ReturnMode = ReturnMode.TOTAL,
     /** Every equity index (VIX excluded), for the all-indices chart. */
     val equityIndices: List<AnalyzedIndex> = emptyList(),
+    /** Month-end history beyond the last year has loaded (3Y/5Y charts). */
+    val historyReady: Boolean = false,
 ) {
     val canAddMore: Boolean get() = selected.size < CompareViewModel.MAX_SELECTED
 }
@@ -56,6 +59,7 @@ data class CompareUiState(
 @HiltViewModel
 class CompareViewModel @Inject constructor(
     observeIndices: ObserveAnalyzedIndicesUseCase,
+    market: com.fundamentalanalysis.app.domain.repository.MarketRepository,
     private val savedState: SavedStateHandle,
 ) : ViewModel() {
 
@@ -64,7 +68,9 @@ class CompareViewModel @Inject constructor(
     private val range = savedState.getStateFlow(KEY_RANGE, CompareRange.Y1)
     private val mode = savedState.getStateFlow(KEY_MODE, ReturnMode.TOTAL)
 
-    val state: StateFlow<CompareUiState> = combine(observeIndices(), selection, range, mode) { all, picked, r, m ->
+    val state: StateFlow<CompareUiState> = combine(
+        observeIndices(), selection, range, mode, market.observeAvailability(),
+    ) { all, picked, r, m, availability ->
         val bySymbol = all.associateBy { it.symbol }
         val symbols = picked ?: DEFAULT_SELECTION.filter { it in bySymbol }
         CompareUiState(
@@ -74,8 +80,9 @@ class CompareViewModel @Inject constructor(
             range = r,
             mode = m,
             equityIndices = all.filter { it.index.category != IndexCategory.VOLATILITY },
+            historyReady = availability.historyReady,
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CompareUiState())
+    }.flowOn(kotlinx.coroutines.Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CompareUiState())
 
     fun add(symbol: String) {
         val current = state.value.selected.map { it.symbol }
