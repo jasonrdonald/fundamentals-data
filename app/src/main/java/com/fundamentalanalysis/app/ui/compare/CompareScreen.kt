@@ -47,6 +47,8 @@ import com.fundamentalanalysis.app.ui.components.ChartSeries
 import com.fundamentalanalysis.app.ui.components.EmptyState
 import com.fundamentalanalysis.app.ui.components.Fmt
 import com.fundamentalanalysis.app.ui.components.LineChart
+import com.fundamentalanalysis.app.ui.components.HorizontalBars
+import com.fundamentalanalysis.app.ui.components.GroupedBarChart
 import com.fundamentalanalysis.app.ui.components.LoadingState
 import com.fundamentalanalysis.app.ui.components.ScreenScaffold
 import com.fundamentalanalysis.app.ui.components.SectionCard
@@ -67,7 +69,7 @@ fun CompareScreen(
     ScreenScaffold(title = "Compare") { padding ->
         Column(Modifier.padding(padding)) {
             if (state.loading) LoadingState()
-            else CompareContent(state, viewModel::add, viewModel::remove, viewModel::onRangeChange, onOpenIndex)
+            else CompareContent(state, viewModel::add, viewModel::remove, viewModel::onRangeChange, viewModel::onModeChange, onOpenIndex)
         }
     }
 }
@@ -78,6 +80,7 @@ private fun CompareContent(
     onAdd: (String) -> Unit,
     onRemove: (String) -> Unit,
     onRange: (CompareRange) -> Unit,
+    onMode: (ReturnMode) -> Unit,
     onOpenIndex: (String) -> Unit,
 ) {
     val colors = LocalChartColors.current
@@ -127,6 +130,8 @@ private fun CompareContent(
             item { EmptyState("Add up to ${CompareViewModel.MAX_SELECTED} indices to compare them side by side.") }
         } else {
             item { RelativePerformanceCard(state, onRange) }
+            item { ReturnsByPeriodCard(state, onMode) }
+            item { AllIndicesCard(state, onRange) }
             item { SectionCard("Side by side", subtitle = "Best value per row in bold") { ComparisonTable(state.selected) } }
         }
     }
@@ -135,33 +140,130 @@ private fun CompareContent(
 @Composable
 private fun RelativePerformanceCard(state: CompareUiState, onRange: (CompareRange) -> Unit) {
     // Rebase every index to 100 at the start of the window so different levels compare fairly.
-    val (dates, series) = when (state.range) {
-        CompareRange.Y1 -> {
-            val dates = state.selected.flatMap { it.index.daily.takeLast(253).map { b -> b.date } }.distinct().sorted()
-            dates to state.selected.map { idx -> rebased(idx.index.name, dates, idx.index.daily.associate { it.date to it.close }) }
-        }
-        CompareRange.Y5 -> {
-            val dates = state.selected.flatMap { it.index.monthly.takeLast(61).map { b -> b.date } }.distinct().sorted()
-            dates to state.selected.map { idx -> rebased(idx.index.name, dates, idx.index.monthly.associate { it.date to it.close }) }
-        }
+    val range = state.range
+    val sessions = range.sessions
+    val daily = sessions != null
+    // Same window for every index: the last N sessions (or months) plus the base point.
+    val dates = state.selected.flatMap { idx ->
+        if (sessions != null) idx.index.daily.takeLast(sessions + 1).map { it.date }
+        else idx.index.monthly.takeLast((range.months ?: 0) + 1).map { it.date }
+    }.distinct().sorted()
+    val series = state.selected.map { idx ->
+        val closes = (if (daily) idx.index.daily else idx.index.monthly).associate { it.date to it.close }
+        rebased(idx.index.name, dates, closes)
     }
-    SectionCard("Relative performance", subtitle = "Rebased to 100 at the start of the window") {
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
-            CompareRange.entries.forEachIndexed { i, r ->
-                SegmentedButton(
-                    selected = state.range == r,
-                    onClick = { onRange(r) },
-                    shape = SegmentedButtonDefaults.itemShape(i, CompareRange.entries.size),
-                ) { Text(r.label) }
-            }
-        }
+    SectionCard(
+        "Relative performance",
+        subtitle = "Rebased to 100 at the start of the window · " + if (daily) "daily closes" else "month-end closes",
+    ) {
+        RangeSelector(range, onRange)
         LineChart(
-            xLabels = dates.map { if (state.range == CompareRange.Y1) it.format(shortDay) else Fmt.month(it) },
+            xLabels = dates.map { if (daily) it.format(shortDay) else Fmt.month(it) },
             series = series,
             valueFormatter = { String.format(Locale.US, "%.1f", it) },
             includeZero = false,
             reference = 100.0,
             height = 220.dp,
+        )
+    }
+}
+
+@Composable
+private fun RangeSelector(range: CompareRange, onRange: (CompareRange) -> Unit) {
+    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+        CompareRange.entries.forEachIndexed { i, r ->
+            SegmentedButton(
+                selected = range == r,
+                onClick = { onRange(r) },
+                shape = SegmentedButtonDefaults.itemShape(i, CompareRange.entries.size),
+                icon = {},
+            ) { Text(r.label, maxLines = 1) }
+        }
+    }
+}
+
+/** Grouped bars: one group per period (3M..5Y), one bar per selected index. */
+@Composable
+private fun ReturnsByPeriodCard(state: CompareUiState, onMode: (ReturnMode) -> Unit) {
+    val periods = CompareRange.entries
+    SectionCard(
+        "Returns by period",
+        subtitle = if (state.mode == ReturnMode.TOTAL) "Cumulative return over each window"
+        else "3Y and 5Y shown per year (CAGR); shorter windows cumulative",
+    ) {
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+            ReturnMode.entries.forEachIndexed { i, m ->
+                SegmentedButton(
+                    selected = state.mode == m,
+                    onClick = { onMode(m) },
+                    shape = SegmentedButtonDefaults.itemShape(i, ReturnMode.entries.size),
+                ) { Text(m.label) }
+            }
+        }
+        GroupedBarChart(
+            xLabels = periods.map { it.label },
+            series = state.selected.map { idx ->
+                ChartSeries(Fmt.shortName(idx.index.name), periods.map { idx.returnFor(it, state.mode) })
+            },
+            valueFormatter = Fmt::signedPercent,
+            height = 220.dp,
+        )
+        // Exact values, so nothing depends on reading bar heights or colour.
+        Row(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+            Text("", modifier = Modifier.weight(1.4f))
+            periods.forEach {
+                Text(
+                    it.label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.End,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+        state.selected.forEach { idx ->
+            Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                Text(Fmt.shortName(idx.index.name), style = MaterialTheme.typography.bodySmall, maxLines = 1, modifier = Modifier.weight(1.4f))
+                periods.forEach { p ->
+                    val v = idx.returnFor(p, state.mode)
+                    Text(
+                        v?.let { String.format(Locale.US, "%+.1f", it * 100) } ?: "—",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = changeColor(v),
+                        textAlign = TextAlign.End,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+        Text(
+            "Values in %",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+    }
+}
+
+/** Every equity index ranked for the chosen window, with the compared ones called out. */
+@Composable
+private fun AllIndicesCard(state: CompareUiState, onRange: (CompareRange) -> Unit) {
+    val range = state.range
+    val chosen = state.selected.map { it.symbol }.toSet()
+    val rows = state.equityIndices
+        .mapNotNull { idx -> idx.returnFor(range, state.mode)?.let { idx to it } }
+        .sortedByDescending { it.second }
+    SectionCard(
+        "All indices, ${range.label}",
+        subtitle = (if (range.years != null && state.mode == ReturnMode.ANNUALISED) "Per year (CAGR)" else "Cumulative return") +
+            " · ● = in your comparison",
+    ) {
+        RangeSelector(range, onRange)
+        HorizontalBars(
+            items = rows.map { (idx, v) -> (if (idx.symbol in chosen) "● " else "") + Fmt.shortName(idx.index.name) to v },
+            valueFormatter = Fmt::signedPercent,
+            signed = true,
+            labelWidth = 128.dp,
         )
     }
 }

@@ -17,7 +17,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 
-enum class StocksTab(val label: String) { SECTORS("Sectors"), RANKINGS("Rankings"), ALL("All stocks") }
+enum class StocksTab(val label: String) { SECTORS("Sectors"), RANKINGS("Rankings"), DISTRIBUTION("Distribution"), ALL("All stocks") }
 
 /** Periods offered for "beat the Nifty" sector analysis. */
 val SECTOR_PERIODS = listOf(Period.M1, Period.M3, Period.M6, Period.YTD, Period.Y1, Period.Y3)
@@ -50,6 +50,10 @@ data class StocksUiState(
     /** Display name of the selected index (the benchmark). */
     val indexName: String = "",
     val universeSize: Int = 0,
+    /** Spread of the selected period's returns across the index's stocks, vs a normal curve. */
+    val distribution: com.fundamentalanalysis.app.domain.analysis.DistributionStats? = null,
+    /** Return and z-score per stock for the distribution export and list. */
+    val distributionRows: List<Pair<AnalyzedStock, Double>> = emptyList(),
 )
 
 @HiltViewModel
@@ -71,7 +75,13 @@ class StocksViewModel @Inject constructor(
         val stocks = allStocks.filter { it.stock.indexSymbol == universe?.symbol }
         val sectors = StockReports.sectorPerformance(stocks, sel.period)
         val q = sel.query.trim()
+        val benchmark = stocks.firstNotNullOfOrNull { it.metrics.benchmarkReturns[sel.period] }
+        val periodReturns = stocks.mapNotNull { s -> s.metrics.returns[sel.period]?.let { s to it } }
         StocksUiState(
+            distribution = com.fundamentalanalysis.app.domain.analysis.Distributions.of(
+                periodReturns.map { (s, r) -> s.symbol to r }, benchmark,
+            ),
+            distributionRows = periodReturns.sortedByDescending { it.second },
             loading = false,
             selection = sel.copy(universe = universe?.symbol ?: sel.universe),
             universes = universes,

@@ -65,6 +65,8 @@ fun StocksScreen(
                 IconButton(onClick = {
                     if (sel.tab == StocksTab.SECTORS) {
                         shareCsv(context, "$index stocks vs index by sector (${sel.period.label})", StockReports.sectorCsv(state.sectors, sel.period))
+                    } else if (sel.tab == StocksTab.DISTRIBUTION) {
+                        shareCsv(context, "$index stocks ${sel.period.label} return distribution", distributionCsv(state.distributionRows, state.distribution, state.distribution?.benchmark))
                     } else {
                         val side = if (sel.top) "Top" else "Bottom"
                         shareCsv(context, "$side ${sel.count} $index stocks by ${sel.factor.label}", StockReports.rankingCsv(state.ranking, sel.factor))
@@ -87,13 +89,17 @@ fun StocksScreen(
                     )
                 }
             }
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-                StocksTab.entries.forEachIndexed { i, tab ->
-                    SegmentedButton(
+            // Scrollable tabs: four views do not fit as segmented buttons on a phone.
+            androidx.compose.material3.SecondaryScrollableTabRow(
+                selectedTabIndex = StocksTab.entries.indexOf(sel.tab),
+                edgePadding = 16.dp,
+            ) {
+                StocksTab.entries.forEach { tab ->
+                    androidx.compose.material3.Tab(
                         selected = sel.tab == tab,
                         onClick = { viewModel.onTab(tab) },
-                        shape = SegmentedButtonDefaults.itemShape(i, StocksTab.entries.size),
-                    ) { Text(tab.label, maxLines = 1) }
+                        text = { Text(tab.label, maxLines = 1) },
+                    )
                 }
             }
             when {
@@ -101,6 +107,7 @@ fun StocksScreen(
                 state.all.isEmpty() && sel.query.isEmpty() -> EmptyState("No constituent data in the current dataset.")
                 sel.tab == StocksTab.SECTORS -> SectorsView(state, viewModel, onOpenStock)
                 sel.tab == StocksTab.RANKINGS -> RankingsView(state, viewModel, onOpenStock)
+                sel.tab == StocksTab.DISTRIBUTION -> DistributionView(state, viewModel::onPeriod, onOpenStock)
                 else -> AllStocksView(state, viewModel, onOpenStock)
             }
         }

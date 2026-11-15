@@ -52,6 +52,11 @@ Not included yet:
     - alpha (Jensen's alpha vs the stock's index from 36 monthly returns)
 
     Each section also shows supporting measures.
+  - *Distribution* view: a histogram of the index's stock returns for the chosen period, with a fitted normal curve (same mean and SD) and markers for the index return and the mean. It also shows:
+    - mean, median, SD, skewness and excess kurtosis, with a plain-language reading
+    - how many stocks beat the index, and the index's percentile among its stocks
+    - actual vs normal-expected counts in each standard-deviation band, and outliers beyond 2σ
+    - every stock with its z-score (exportable as CSV)
   - *All stocks*: a searchable list.
   - *Stock page*:
     - returns vs its index, with price rebased to 100 over 1Y, 3Y, 5Y or 10Y
@@ -61,7 +66,11 @@ Not included yet:
 
   The Sectors and Rankings views and the year-by-month table export to CSV.
 - **Appearance:** tap the theme icon on the Overview to choose System default (follows the phone), Light or Dark. The choice is saved on the device. Charts and heat tables use colours tuned for each mode.
-- **Compare:** up to 3 indices, rebased to 100 over 1 year or 5 years, with a side-by-side metric table.
+- **Compare:** up to 3 indices:
+  - price rebased to 100 over 3M, 6M, 1Y (daily) or 3Y, 5Y (month-end)
+  - a returns-by-period bar chart across 3M–5Y, switchable between total and annualised for 3Y/5Y, with exact values
+  - every equity index ranked for the chosen window, with the compared ones marked
+  - a side-by-side metric table
 - **Reports:** a ranking by any metric, a trailing-returns matrix, a 12-month heat table of monthly returns, and the industry classification. Each report exports to CSV.
 
 ## Architecture
