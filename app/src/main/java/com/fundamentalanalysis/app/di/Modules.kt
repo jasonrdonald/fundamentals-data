@@ -97,6 +97,9 @@ object StorageModule {
     @Provides
     fun watchlistDao(db: AppDatabase): WatchlistDao = db.watchlistDao()
 
+    @Provides
+    fun portfolioDao(db: AppDatabase): com.fundamentalanalysis.app.data.local.PortfolioDao = db.portfolioDao()
+
     @Provides @Singleton @SettingsStore
     fun settingsDataStore(@ApplicationContext context: Context): DataStore<Preferences> =
         PreferenceDataStoreFactory.create { context.preferencesDataStoreFile("settings") }
@@ -133,6 +136,7 @@ object NetworkModule {
 abstract class BindingsModule {
     @Binds abstract fun marketRepository(impl: OfflineFirstMarketRepository): MarketRepository
     @Binds abstract fun watchlistRepository(impl: LocalWatchlistRepository): WatchlistRepository
+    @Binds abstract fun portfolioRepository(impl: com.fundamentalanalysis.app.data.portfolio.LocalPortfolioRepository): com.fundamentalanalysis.app.domain.repository.PortfolioRepository
     @Binds abstract fun settingsRepository(impl: com.fundamentalanalysis.app.data.local.SettingsPreferences): com.fundamentalanalysis.app.domain.repository.SettingsRepository
     @Binds abstract fun remoteDatasetSource(impl: HttpRemoteDatasetSource): RemoteDatasetSource
     @Binds abstract fun seedDatasetSource(impl: AssetSeedDatasetSource): SeedDatasetSource

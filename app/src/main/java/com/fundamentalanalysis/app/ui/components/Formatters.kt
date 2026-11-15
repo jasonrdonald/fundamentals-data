@@ -70,6 +70,28 @@ object Fmt {
     /** Share price in rupees with Indian digit grouping. */
     fun rupees(value: Double?): String = if (value == null) "—" else "₹" + indian.format(value)
 
+    /** Rupee amount, compact: ₹45,678, ₹12.34 L, ₹1.23 Cr. */
+    fun inr(value: Double?, signed: Boolean = false): String {
+        if (value == null) return "—"
+        val sign = when {
+            value < 0 -> "−"
+            signed && value > 0 -> "+"
+            else -> ""
+        }
+        val a = abs(value)
+        val body = when {
+            a >= 1e7 -> String.format(Locale.US, "%.2f Cr", a / 1e7)
+            a >= 1e5 -> String.format(Locale.US, "%.2f L", a / 1e5)
+            else -> java.text.NumberFormat.getIntegerInstance(Locale.forLanguageTag("en-IN")).format(Math.round(a))
+        }
+        return "$sign₹$body"
+    }
+
+    /** Share quantity: whole numbers without decimals, fund units with up to 3. */
+    fun qty(value: Double): String =
+        if (value % 1.0 == 0.0) java.text.NumberFormat.getIntegerInstance(Locale.forLanguageTag("en-IN")).format(value.toLong())
+        else String.format(Locale.US, "%.3f", value).trimEnd('0').trimEnd('.')
+
     /** Amount already in crore: "₹80,775 Cr", or "₹18.13 L Cr" for lakh-crore sizes. */
     fun crore(value: Double?): String {
         if (value == null) return "—"

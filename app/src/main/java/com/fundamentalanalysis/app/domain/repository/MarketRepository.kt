@@ -46,3 +46,15 @@ interface WatchlistRepository {
     fun observeWatchlist(): Flow<Set<String>>
     suspend fun toggle(symbol: String)
 }
+
+/** The user's own portfolio, imported from a broker backup file and kept on this device only. */
+interface PortfolioRepository {
+    fun observePortfolio(): Flow<com.fundamentalanalysis.app.domain.model.PortfolioData>
+    /** Reads and checks a backup file (a content URI) without storing anything. */
+    suspend fun readImportFile(uri: String): com.fundamentalanalysis.app.domain.model.ImportPreview
+    /** Stores the file read last, replacing data previously imported for the same accounts. */
+    suspend fun confirmImport(): com.fundamentalanalysis.app.domain.model.ImportPreview
+    fun cancelImport()
+    /** Deletes the imported portfolio from this device. */
+    suspend fun clear()
+}

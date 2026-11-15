@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.ui.Alignment
 import com.fundamentalanalysis.app.domain.model.DataPart
@@ -63,6 +64,7 @@ private val sectorPeriods = listOf(Period.D1, Period.W1, Period.M1, Period.M3, P
 fun DashboardScreen(
     onOpenIndex: (String) -> Unit,
     onOpenData: () -> Unit,
+    onOpenPortfolio: () -> Unit,
     viewModel: DashboardViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -86,14 +88,20 @@ fun DashboardScreen(
                 onRefresh = viewModel::refresh,
                 modifier = Modifier.padding(padding).fillMaxSize(),
             ) {
-                DashboardContent(state, onOpenIndex, onOpenData, viewModel::onSectorPeriodChange)
+                DashboardContent(state, onOpenIndex, onOpenData, onOpenPortfolio, viewModel::onSectorPeriodChange)
             }
         }
     }
 }
 
 @Composable
-private fun DashboardContent(state: DashboardUiState, onOpenIndex: (String) -> Unit, onOpenData: () -> Unit, onPeriod: (Period) -> Unit) {
+private fun DashboardContent(
+    state: DashboardUiState,
+    onOpenIndex: (String) -> Unit,
+    onOpenData: () -> Unit,
+    onOpenPortfolio: () -> Unit,
+    onPeriod: (Period) -> Unit,
+) {
     val headline = state.headline ?: return
     LazyColumn(
         contentPadding = PaddingValues(16.dp),
@@ -101,6 +109,7 @@ private fun DashboardContent(state: DashboardUiState, onOpenIndex: (String) -> U
         modifier = Modifier.fillMaxSize(),
     ) {
         item { state.data?.let { DataBanner(it, onOpenData) } }
+        item { PortfolioCard(state.portfolio, onOpenPortfolio) }
         item {
             SectionCard(headline.index.name, subtitle = "Latest completed session") {
                 HeadlineQuote(headline)
@@ -208,5 +217,46 @@ private fun DataBanner(data: DataStatus, onOpen: () -> Unit) {
         }
         if (data.progress.active) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
         Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Open data management", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** The user's portfolio at a glance, or an invitation to import one. */
+@Composable
+private fun PortfolioCard(p: com.fundamentalanalysis.app.domain.model.PortfolioSummary?, onOpen: () -> Unit) {
+    androidx.compose.material3.ElevatedCard(onClick = onOpen, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Your portfolio", style = MaterialTheme.typography.titleMedium)
+                if (p == null) {
+                    Text(
+                        "Import holdings and trades from Zerodha, HDFC Securities or Aionion Capital. Stays on this phone.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    Text(Fmt.inr(p.value), style = MaterialTheme.typography.headlineSmall, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+                    Row {
+                        com.fundamentalanalysis.app.ui.components.ChangeText(
+                            "${Fmt.inr(p.pnl, signed = true)} (${Fmt.signedPercent(p.pnlPct)}) overall", p.pnl,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        p.dayChange?.let {
+                            Text(" · ", style = MaterialTheme.typography.bodyMedium)
+                            com.fundamentalanalysis.app.ui.components.ChangeText("${Fmt.inr(it, signed = true)} latest session", it, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                    Text(
+                        "${p.positions.size} holdings · ${p.accounts.joinToString { it.broker }}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Icon(
+                if (p == null) Icons.Filled.FileOpen else Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = if (p == null) "Import portfolio" else "Open portfolio",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }

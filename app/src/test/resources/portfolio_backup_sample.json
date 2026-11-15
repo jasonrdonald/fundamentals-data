@@ -1,0 +1,54 @@
+{
+  "app": "superapp-portfolio",
+  "version": 1,
+  "exportedAt": "2026-11-16T10:00:00.000Z",
+  "brokerAccounts": [
+    {"id": "acc-z", "name": "Zerodha", "broker": "Zerodha", "kind": "stock", "clientId": "AB1234", "currency": "INR", "createdAt": 1, "updatedAt": 1},
+    {"id": "acc-h", "name": "HDFC", "broker": "HDFC Securities", "kind": "stock", "clientId": "99887766", "currency": "INR", "createdAt": 1, "updatedAt": 1},
+    {"id": "acc-a", "name": "Aionion", "broker": "Aionion Capital", "kind": "stock", "clientId": "XY9", "currency": "INR", "createdAt": 1, "updatedAt": 1},
+    {"id": "acc-v", "name": "US", "broker": "Vested", "kind": "stock", "clientId": "US1", "currency": "USD", "createdAt": 1, "updatedAt": 1},
+    {"id": "acc-m", "name": "MF", "broker": "Nippon MF", "kind": "mf", "clientId": "F1", "currency": "INR", "createdAt": 1, "updatedAt": 1},
+    {"id": "acc-c", "name": "Crypto", "broker": "Zebpay", "kind": "crypto", "clientId": "C1", "currency": "INR", "createdAt": 1, "updatedAt": 1}
+  ],
+  "trades": [
+    {"id": "t1", "accountId": "acc-z", "symbol": "ALPHA", "isin": "INE000A01011", "date": "2024-03-04", "side": "buy", "qty": 10, "price": 100.0, "exchange": "NSE", "series": "EQ", "tradeId": "1", "time": "2024-03-04T09:20:00", "kind": "stock", "manual": false, "note": "", "updatedAt": 1},
+    {"id": "t2", "accountId": "acc-z", "symbol": "ALPHA", "isin": "INE000A01011", "date": "2025-06-10", "side": "sell", "qty": 2, "price": 150.0, "exchange": "NSE", "series": "EQ", "tradeId": "2", "time": "2025-06-10T10:00:00", "kind": "stock", "manual": false, "note": "", "updatedAt": 1},
+    {"id": "t3", "accountId": "acc-h", "symbol": "ALPHA", "isin": "INE000A01011", "date": "2025-01-15", "side": "buy", "qty": 5, "price": 120.0, "exchange": "BSE", "series": "A", "tradeId": "3", "time": "2025-01-15T11:00:00", "kind": "stock", "manual": false, "note": "", "updatedAt": 1},
+    {"id": "t4", "accountId": "acc-a", "symbol": "GAMMA", "isin": "INE000C01033", "date": "2026-02-02", "side": "buy", "qty": 4, "price": 500.0, "exchange": "", "series": "", "tradeId": "4", "time": "2026-02-02T09:30:00", "kind": "stock", "manual": false, "note": "", "updatedAt": 1},
+    {"id": "t5", "accountId": "acc-v", "symbol": "USCO", "isin": "", "date": "2025-01-01", "side": "buy", "qty": 1.5, "price": 200.0, "exchange": "US", "series": "", "tradeId": "5", "time": "2025-01-01T00:00:00", "kind": "stock", "manual": false, "note": "", "updatedAt": 1},
+    {"id": "t6", "accountId": "acc-c", "symbol": "BTC", "isin": "", "date": "2025-01-01", "side": "out", "qty": 1, "price": 1.0, "exchange": "Zebpay", "series": "", "tradeId": "6", "time": "2025-01-01T00:00:00", "kind": "stock", "manual": false, "note": "", "updatedAt": 1}
+  ],
+  "brokerHoldings": [
+    {"id": "acc-z", "asOf": "2026-11-01", "updatedAt": 1, "rows": [
+      {"symbol": "ALPHA", "isin": "INE000A01011", "kind": "stock", "sector": "Banks", "qty": 8, "avg": 100.0, "close": 140.0},
+      {"symbol": "GOLDETF", "isin": "INF000G01019", "kind": "mf", "sector": "Others - Index Funds/ETFs", "qty": 12.5, "avg": 50.0, "close": 60.0}
+    ]},
+    {"id": "acc-h", "asOf": "2026-11-02", "updatedAt": 1, "rows": [
+      {"symbol": "ALPHA", "isin": "INE000A01011", "kind": "stock", "sector": "", "qty": 5, "avg": 120.0, "close": 141.0},
+      {"symbol": "BETA", "isin": "INE000B01022", "kind": "stock", "sector": "", "qty": 3, "avg": 1000.0, "close": 900.0},
+      {"symbol": "BETA", "isin": "INE000B01022", "kind": "stock", "sector": "", "qty": 1, "avg": 1200.0, "close": 900.0}
+    ]},
+    {"id": "acc-a", "asOf": "2026-11-02", "updatedAt": 1, "rows": [
+      {"symbol": "GAMMA", "isin": "INE000C01033", "kind": "stock", "sector": "", "qty": 4, "avg": 500.0, "close": 520.0}
+    ]},
+    {"id": "acc-v", "asOf": "2026-11-01", "updatedAt": 1, "rows": [
+      {"symbol": "USCO", "isin": "", "kind": "stock", "sector": "", "qty": 1.5, "avg": 200.0, "close": 210.0}
+    ]}
+  ],
+  "portfolioActions": [
+    {"id": "a1", "accountId": "acc-h", "type": "allot", "symbol": "BETA", "date": "2024-05-05", "qty": 1, "avg": null, "price": 0.0, "issue": "transfer", "direction": "in", "party": "", "note": "", "createdAt": 1, "updatedAt": 1}
+  ],
+  "portfolioNotes": [
+    {"id": "n1", "accountId": "acc-z", "symbol": "ALPHA", "reviewed": true, "comment": "Long-term hold", "updatedAt": 1},
+    {"id": "n2", "accountId": "acc-v", "symbol": "USCO", "reviewed": false, "comment": "not imported", "updatedAt": 1}
+  ],
+  "earnContracts": [{"id": "e1", "accountId": "acc-c", "coin": "BTC", "contract": "x", "start": "2025-01-01", "maturity": "2025-02-01", "rate": "1%", "tenure": "30d", "principal": 1.0, "earned": 0.1, "status": "done", "updatedAt": 1}],
+  "transfers": [],
+  "brokerFees": [
+    {"id": "f1", "accountId": "acc-h", "date": "2025-01-15", "kind": "Brokerage", "coin": "", "qty": 0, "amount": 20.0, "tradeId": "3", "updatedAt": 1},
+    {"id": "f2", "accountId": "acc-h", "date": "2025-01-15", "kind": "STT", "coin": "", "qty": 0, "amount": 0.6, "tradeId": "3", "updatedAt": 1},
+    {"id": "f3", "accountId": "acc-a", "date": "2026-02-02", "kind": "Brokerage and charges", "coin": "", "qty": 0, "amount": 15.0, "tradeId": "4", "updatedAt": 1},
+    {"id": "f4", "accountId": "acc-c", "date": "2026-02-02", "kind": "Trading fee", "coin": "BTC", "qty": 0, "amount": 99.0, "tradeId": "6", "updatedAt": 1}
+  ],
+  "market": [{"symbol": "ALPHA", "splits": [], "dividends": [], "eventsAt": 1}]
+}

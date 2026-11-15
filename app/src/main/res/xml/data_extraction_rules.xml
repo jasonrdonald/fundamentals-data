@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The database holds the user's imported portfolio: keep it out of cloud backups.
+     Device-to-device transfer (e.g. setting up a new phone) still copies it. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="database" path="." />
+    </cloud-backup>
+</data-extraction-rules>

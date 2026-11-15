@@ -36,6 +36,8 @@ data class DashboardUiState(
     val watchlist: List<AnalyzedIndex> = emptyList(),
     val composition: Composition? = null,
     val data: DataStatus? = null,
+    /** The user's imported portfolio (null when nothing is imported). */
+    val portfolio: com.fundamentalanalysis.app.domain.model.PortfolioSummary? = null,
     val refreshing: Boolean = false,
 ) {
     val isEmpty: Boolean get() = !loading && headline == null
@@ -45,6 +47,7 @@ data class DashboardUiState(
 class DashboardViewModel @Inject constructor(
     observeIndices: ObserveAnalyzedIndicesUseCase,
     private val repository: MarketRepository,
+    observePortfolio: com.fundamentalanalysis.app.domain.usecase.ObservePortfolioUseCase,
 ) : ViewModel() {
 
     private val refreshing = MutableStateFlow(false)
@@ -55,10 +58,10 @@ class DashboardViewModel @Inject constructor(
     val state: StateFlow<DashboardUiState> = combine(
         observeIndices(),
         repository.observeComposition(),
-        repository.observeDataStatus(),
+        kotlinx.coroutines.flow.combine(repository.observeDataStatus(), observePortfolio()) { d, p -> d to p },
         refreshing,
         sectorPeriod,
-    ) { indices, composition, data, isRefreshing, period ->
+    ) { indices, composition, (data, portfolio), isRefreshing, period ->
         val equity = indices.filter { it.index.category != IndexCategory.VOLATILITY }
         val dayChanges = equity.mapNotNull { it.analytics.returns[Period.D1] }
         DashboardUiState(
@@ -73,6 +76,7 @@ class DashboardViewModel @Inject constructor(
             watchlist = indices.filter { it.isWatchlisted },
             composition = composition,
             data = data,
+            portfolio = portfolio,
             refreshing = isRefreshing,
         )
     }.flowOn(kotlinx.coroutines.Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardUiState())

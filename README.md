@@ -72,6 +72,15 @@ Not included yet:
   - every equity index ranked for the chosen window, with the compared ones marked
   - a side-by-side metric table
 - **Reports:** a ranking by any metric, a trailing-returns matrix, a 12-month heat table of monthly returns, and the industry classification. Each report exports to CSV.
+- **Portfolio** (the "Your portfolio" card on the Overview): import your own holdings from a broker backup file.
+  - Template: the `superapp-portfolio` broker backup JSON (version 1). Only **Indian equity broker** accounts are imported: **Zerodha, HDFC Securities and Aionion Capital**. Other accounts in the file (US brokers, mutual fund houses, crypto wallets and exchanges) are listed in the preview and skipped.
+  - Imported per broker: the holdings snapshot, trades, corporate actions and transfers, notes, and charges. Re-importing replaces those brokers' data.
+  - A preview shows what will be imported and skipped before anything is stored.
+  - *Holdings*: one position per security across brokers (merged by ISIN), with value, P&L on cost and the brokers that hold it. Stocks in the Nifty 50, Next 50 or Midcap 150 are priced at the dataset's latest close and open their stock page; everything else uses the broker's snapshot price.
+  - *Allocation*: by sector, broker, index membership, and the largest positions.
+  - *vs Index*: how many tracked holdings beat their own index over 1M–1Y, the value-weighted return, and each holding's 1Y return vs its index.
+  - *Activity*: amounts bought and sold and charges paid by year, corporate actions, and the trade list.
+  - **Privacy:** the portfolio is stored only in the app's database on the phone. It is never uploaded, the database is excluded from cloud backups, and client IDs are stored masked. Delete it any time from the Portfolio screen.
 - **Data** (the storage icon on the Overview, or tap the dataset line under the title):
   - what is on the device vs what is published, and when it was last checked
   - **Check for updates**, **Download all again** and **Reset to bundled** (the watchlist and settings are kept)
