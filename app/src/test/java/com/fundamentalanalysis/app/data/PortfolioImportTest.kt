@@ -139,7 +139,7 @@ class PortfolioImportTest {
         val y1 = s.vsIndex.single { it.period == Period.Y1 }
         assertEquals(1, y1.measured); assertEquals(1, y1.beat); assertEquals(0.30, y1.weightedReturn!!, 1e-12)
         assertEquals(0, s.vsIndex.single { it.period == Period.M1 }.beat)
-        assertEquals(listOf("Nifty 50", "Not in a tracked index", PortfolioAnalytics.FUNDS_SECTOR).toSet(), s.byIndex.map { it.label }.toSet())
+        assertEquals(setOf("Nifty 50", "Other stocks", "Funds & ETFs"), s.byIndex.map { it.label }.toSet())
     }
 
     @Test fun `activity sums trades and charges by year`() {
@@ -163,5 +163,49 @@ class PortfolioImportTest {
         assertEquals("IT - Software", PortfolioAnalytics.normalizeSector("IT - SOFTWARE"))
         assertEquals("Oil and Gas", PortfolioAnalytics.normalizeSector("OIL AND GAS"))
         assertEquals("Metals & Mining", PortfolioAnalytics.normalizeSector("Metals & Mining"))
+    }
+
+    @Test fun `holdings are grouped by index with per-index comparison`() {
+        val s = PortfolioAnalytics.summarize(data(), tracked())
+        assertEquals(
+            listOf(com.fundamentalanalysis.app.domain.model.IndexGroup.NIFTY_50, com.fundamentalanalysis.app.domain.model.IndexGroup.OTHER, com.fundamentalanalysis.app.domain.model.IndexGroup.FUNDS),
+            s.groups.map { it.group },
+        )
+        assertEquals(s.positions.size, s.groups.sumOf { it.positions.size })
+        assertEquals(1.0, s.groups.sumOf { it.share }, 1e-9)
+        val nifty = s.groups.first()
+        assertEquals(listOf("ALPHA"), nifty.positions.map { it.symbol })
+        val y1 = nifty.vsIndex.single { it.period == Period.Y1 }
+        assertEquals(1, y1.beat); assertEquals(0.30, y1.weightedReturn!!, 1e-12); assertEquals(0.10, y1.indexReturn!!, 1e-12)
+        assertTrue(s.groups.filterNot { it.group.tracked }.all { it.vsIndex.isEmpty() })
+        assertEquals(setOf("Nifty 50", "Other stocks", "Funds & ETFs"), s.byIndex.map { it.label }.toSet())
+    }
+
+    @Test fun `other stocks are compared with the Nifty 50 since purchase`() {
+        fun bar(d: LocalDate, c: Double) = com.fundamentalanalysis.app.domain.model.Bar(d, c, c, c, c, null)
+        val nifty = com.fundamentalanalysis.app.domain.model.MarketIndex(
+            "NIFTY 50", "Nifty 50", com.fundamentalanalysis.app.domain.model.IndexCategory.BROAD, null,
+            daily = listOf(bar(LocalDate.of(2025, 11, 3), 200.0), bar(LocalDate.of(2026, 1, 5), 210.0), bar(day, 220.0)),
+            monthly = listOf(bar(LocalDate.of(2023, 1, 1), 100.0), bar(LocalDate.of(2023, 2, 1), 110.0), bar(LocalDate.of(2025, 11, 1), 200.0)),
+        )
+        // BETA (not in a tracked index): two buys, 1,000 on 5 Jan 2026 and 1,000 on 5 Jan 2026 -> one purchase date.
+        val beta = { id: String, d: LocalDate -> PortfolioTrade(id, "h", "BETA", "INE2", d, TradeSide.BUY, 1.0, 1000.0, "NSE", HoldingKind.STOCK) }
+        val withBuys = data().copy(trades = data().trades + beta("b1", LocalDate.of(2026, 1, 5)) + beta("b2", LocalDate.of(2026, 1, 5)))
+        val s = PortfolioAnalytics.summarize(withBuys, tracked(), nifty)
+        val other = s.groups.single { it.group == com.fundamentalanalysis.app.domain.model.IndexGroup.OTHER }
+        val sp = other.sincePurchase!!
+        val row = sp.rows.single()
+        assertEquals("BETA", row.position.symbol)
+        assertEquals(LocalDate.of(2026, 1, 5), row.avgBuyDate)
+        assertEquals(220.0 / 210.0 - 1, row.benchmarkReturn, 1e-12)
+        assertEquals(3600.0 / 4200.0 - 1, row.holdingReturn, 1e-12)
+        assertEquals(0, sp.beat)
+        assertEquals(4200.0 * 220.0 / 210.0, sp.benchmarkValue, 1e-9)
+        // Without buy trades the holding is listed as not comparable.
+        val none = PortfolioAnalytics.summarize(data(), tracked(), nifty).groups.single { it.group == com.fundamentalanalysis.app.domain.model.IndexGroup.OTHER }
+        assertEquals(listOf("BETA"), none.sincePurchase!!.withoutHistory.map { it.symbol })
+        // Purchases older than the daily window use the previous month-end close.
+        assertEquals(100.0, PortfolioAnalytics.closeOn(nifty, LocalDate.of(2023, 2, 15))!!, 1e-12)
+        assertEquals(210.0, PortfolioAnalytics.closeOn(nifty, LocalDate.of(2026, 1, 6))!!, 1e-12)
     }
 }

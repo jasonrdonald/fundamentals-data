@@ -19,13 +19,20 @@ import javax.inject.Inject
 class ObservePortfolioUseCase @Inject constructor(
     private val portfolio: PortfolioRepository,
     private val stocks: ObserveAnalyzedStocksUseCase,
+    private val market: com.fundamentalanalysis.app.domain.repository.MarketRepository,
     @DefaultDispatcher private val dispatcher: CoroutineDispatcher,
 ) {
     /** [broker] limits the summary to one broker's accounts (null = all). */
     operator fun invoke(broker: Flow<String?> = flowOf(null)): Flow<PortfolioSummary?> =
-        combine(portfolio.observePortfolio(), stocks(), broker) { data, analyzed, b ->
-            if (data.isEmpty) null else PortfolioAnalytics.summarize(data.forBroker(b), analyzed.associateBy { it.symbol })
+        combine(portfolio.observePortfolio(), stocks(), broker, market.observeIndices()) { data, analyzed, b, indices ->
+            if (data.isEmpty) null
+            else PortfolioAnalytics.summarize(data.forBroker(b), analyzed.associateBy { it.symbol }, indices.firstOrNull { it.symbol == BENCHMARK })
         }.flowOn(dispatcher)
+
+    private companion object {
+        /** Benchmark for holdings outside the tracked indices. */
+        const val BENCHMARK = "NIFTY 50"
+    }
 
     /** Brokers present in the imported data. */
     fun brokers(): Flow<List<String>> = portfolio.observePortfolio().map { d -> d.accounts.map { it.broker }.distinct() }

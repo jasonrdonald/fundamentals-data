@@ -142,7 +142,77 @@ data class IndexComparison(
     val beat: Int,
     /** Value-weighted return of the measured holdings over [period] (ignores trades within it). */
     val weightedReturn: Double?,
+    /** The index's own return over [period] (only for a single-index group). */
+    val indexReturn: Double? = null,
 )
+
+/** Which index a holding belongs to, in display order. */
+enum class IndexGroup(val label: String, val indexSymbol: String?) {
+    NIFTY_50("Nifty 50", "NIFTY 50"),
+    NEXT_50("Nifty Next 50", "NIFTY NEXT 50"),
+    MIDCAP_150("Nifty Midcap 150", "NIFTY MIDCAP 150"),
+    OTHER("Other stocks", null),
+    FUNDS("Funds & ETFs", null);
+
+    val tracked: Boolean get() = indexSymbol != null
+
+    companion object {
+        fun of(p: Position): IndexGroup {
+            val symbol = p.tracked?.stock?.indexSymbol
+            return entries.firstOrNull { it.indexSymbol != null && it.indexSymbol == symbol }
+                ?: if (p.kind == HoldingKind.FUND) FUNDS else OTHER
+        }
+    }
+}
+
+/**
+ * A holding's return on cost compared with what the same money would have made in a benchmark
+ * index, from the holding's (value-weighted) average purchase date until the latest price.
+ */
+data class PurchaseComparison(
+    val position: Position,
+    val avgBuyDate: LocalDate,
+    /** Value / invested - 1, on the broker's average cost. */
+    val holdingReturn: Double,
+    /** Benchmark close now / close on [avgBuyDate] - 1. */
+    val benchmarkReturn: Double,
+) {
+    val excess: Double get() = holdingReturn - benchmarkReturn
+    /** What the same invested amount would be worth in the benchmark. */
+    val benchmarkValue: Double get() = position.invested * (1 + benchmarkReturn)
+}
+
+data class SincePurchase(
+    val benchmark: String,
+    /** Best (largest lead over the benchmark) first. */
+    val rows: List<PurchaseComparison>,
+    /** Holdings with no dated purchase (e.g. transfers in, or bought before the trade history). */
+    val withoutHistory: List<Position>,
+) {
+    val beat: Int get() = rows.count { it.excess > 0 }
+    val invested: Double get() = rows.sumOf { it.position.invested }
+    val value: Double get() = rows.sumOf { it.position.value }
+    val benchmarkValue: Double get() = rows.sumOf { it.benchmarkValue }
+}
+
+/** One index's slice of the portfolio. */
+data class GroupSummary(
+    val group: IndexGroup,
+    /** Largest first. */
+    val positions: List<Position>,
+    val value: Double,
+    val invested: Double,
+    /** Share of the whole portfolio's value. */
+    val share: Double,
+    val dayChange: Double?,
+    /** Empty for groups that aren't an index (other stocks, funds). */
+    val vsIndex: List<IndexComparison>,
+    /** Other stocks only: each holding vs the Nifty 50 over the time since it was bought. */
+    val sincePurchase: SincePurchase? = null,
+) {
+    val pnl: Double get() = value - invested
+    val pnlPct: Double? get() = if (invested > 0) value / invested - 1 else null
+}
 
 data class PortfolioSummary(
     val accounts: List<PortfolioAccount>,
@@ -154,6 +224,8 @@ data class PortfolioSummary(
     val byBroker: List<Allocation>,
     val byIndex: List<Allocation>,
     val vsIndex: List<IndexComparison>,
+    /** Holdings split by index (non-empty groups, in [IndexGroup] order). */
+    val groups: List<GroupSummary>,
     val activity: List<YearActivity>,
     val trades: List<PortfolioTrade>,
     val actions: List<PortfolioAction>,

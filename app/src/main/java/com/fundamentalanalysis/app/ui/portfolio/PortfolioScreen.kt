@@ -1,5 +1,14 @@
 package com.fundamentalanalysis.app.ui.portfolio
 
+import com.fundamentalanalysis.app.domain.model.IndexGroup
+import com.fundamentalanalysis.app.domain.model.Period
+import com.fundamentalanalysis.app.domain.model.IndexComparison
+import com.fundamentalanalysis.app.domain.model.GroupSummary
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.material3.ElevatedCard
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -190,8 +199,16 @@ private fun PortfolioContent(state: PortfolioUiState, vm: PortfolioViewModel, on
                     }
                 }
                 item {
-                    SectionCard("${state.holdings.size} holdings", Modifier.padding(horizontal = 16.dp), subtitle = "Value · P&L on cost · tap a tracked stock for its analysis") {
-                        state.holdings.forEachIndexed { i, p ->
+                    Text(
+                        "${state.holdings.size} holdings by index · tap a section to fold it · tap a tracked stock for its analysis",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                    )
+                }
+                items(state.groups, key = { it.group.name }) { g ->
+                    GroupCard(g, Modifier.padding(horizontal = 16.dp)) {
+                        g.positions.forEachIndexed { i, p ->
                             if (i > 0) HorizontalDivider()
                             HoldingRow(p, onOpenStock)
                         }
@@ -298,43 +315,198 @@ private fun AllocationCards(s: PortfolioSummary) {
 
 @Composable
 private fun VsIndexCards(s: PortfolioSummary, onOpenStock: (String) -> Unit) {
-    val tracked = s.positions.filter { it.tracked != null }
+    val tracked = s.groups.filter { it.group.tracked }
+    val untracked = s.groups.filterNot { it.group.tracked }
     Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SectionCard(
-            "Beat their index",
-            subtitle = "${tracked.size} of ${s.positions.size} holdings are Nifty 50, Next 50 or Midcap 150 stocks; each is compared with its own index",
+            "All tracked holdings",
+            subtitle = "${s.trackedCount} of ${s.positions.size} holdings are Nifty 50, Next 50 or Midcap 150 stocks; each is compared with its own index",
         ) {
-            s.vsIndex.forEach { c ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(c.period.label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.width(48.dp))
-                    Text("${c.beat} of ${c.measured} beat", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                    ChangeText("weighted ${Fmt.signedPercent(c.weightedReturn)}", c.weightedReturn, textAlign = TextAlign.End)
-                }
-            }
+            ComparisonTable(s.vsIndex, showIndex = false)
             Text(
                 "Weighted by today's value; price returns over the period, ignoring when you bought.",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp),
             )
         }
-        SectionCard("1Y vs index, by holding", subtitle = "pp = percentage points above (+) or below (−) the stock's own index") {
-            tracked.sortedByDescending { it.tracked!!.metrics.excess(com.fundamentalanalysis.app.domain.model.Period.Y1) ?: Double.NEGATIVE_INFINITY }
-                .forEachIndexed { i, p ->
-                    if (i > 0) HorizontalDivider()
-                    val m = p.tracked!!.metrics
-                    val excess = m.excess(com.fundamentalanalysis.app.domain.model.Period.Y1)
-                    Row(
-                        Modifier.fillMaxWidth().clickable { onOpenStock(p.symbol) }.padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text(p.symbol, style = MaterialTheme.typography.bodyMedium)
-                            Text(p.tracked.stock.indexSymbol, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        tracked.forEach { g ->
+            GroupCard(g) {
+                ComparisonTable(g.vsIndex, showIndex = true)
+                Text(
+                    "1Y vs ${g.group.label} · pp = percentage points above (+) or below (−) the index",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
+                )
+                g.positions.sortedByDescending { it.tracked?.metrics?.excess(Period.Y1) ?: Double.NEGATIVE_INFINITY }
+                    .forEachIndexed { i, p ->
+                        if (i > 0) HorizontalDivider()
+                        val m = p.tracked!!.metrics
+                        val r = m.returns[Period.Y1]
+                        val excess = m.excess(Period.Y1)
+                        Row(
+                            Modifier.fillMaxWidth().clickable { onOpenStock(p.symbol) }.padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(p.symbol, style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    "${p.tracked.stock.industry} · ${Fmt.inr(p.value)}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            ChangeText(Fmt.signedPercent(r), r, Modifier.width(80.dp), textAlign = TextAlign.End)
+                            ChangeText(excess?.let { String.format(Locale.US, "%+.1f pp", it * 100) } ?: "—", excess, Modifier.width(84.dp), textAlign = TextAlign.End)
                         }
-                        ChangeText(Fmt.signedPercent(m.returns[com.fundamentalanalysis.app.domain.model.Period.Y1]), m.returns[com.fundamentalanalysis.app.domain.model.Period.Y1], Modifier.width(80.dp), textAlign = TextAlign.End)
-                        ChangeText(excess?.let { String.format(Locale.US, "%+.1f pp", it * 100) } ?: "—", excess, Modifier.width(84.dp), textAlign = TextAlign.End)
+                    }
+            }
+        }
+        untracked.firstOrNull { it.group == IndexGroup.OTHER }?.let { g -> OtherStocksCard(g) }
+        untracked.filter { it.group == IndexGroup.FUNDS }.forEach { g ->
+            SectionCard("Not compared") {
+                KeyValueRow(g.group.label, "${g.positions.size} holdings · ${Fmt.inr(g.value)}")
+                Text(
+                    "Funds and ETFs aren't compared with an index here.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+        }
+    }
+}
+
+private val monthYear = java.time.format.DateTimeFormatter.ofPattern("MMM yyyy", Locale.ENGLISH)
+
+/**
+ * Stocks outside the tracked indices, compared with the Nifty 50 since they were bought: the app
+ * has no price history for them, so 1M–1Y returns aren't available.
+ */
+@Composable
+private fun OtherStocksCard(g: GroupSummary) {
+    val sp = g.sincePurchase
+    GroupCard(g) {
+        if (sp == null) {
+            Text("Nifty 50 history isn't loaded yet.", style = MaterialTheme.typography.bodyMedium)
+            return@GroupCard
+        }
+        Text("Since purchase vs ${sp.benchmark}", style = MaterialTheme.typography.titleSmall)
+        Text(
+            "Return on cost compared with the ${sp.benchmark}'s return from each holding's average purchase date. " +
+                "These stocks aren't in a tracked index, so 1M–1Y returns aren't available.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+        if (sp.rows.isNotEmpty()) {
+            val ownReturn = sp.value / sp.invested - 1
+            val niftyReturn = sp.benchmarkValue / sp.invested - 1
+            KeyValueRow("Beat the ${sp.benchmark}", "${sp.beat} of ${sp.rows.size}")
+            KeyValueRow("Invested", Fmt.inr(sp.invested))
+            KeyValueRow("Worth now", "${Fmt.inr(sp.value)} (${Fmt.signedPercent(ownReturn)})", valueColor = changeColor(ownReturn))
+            KeyValueRow(
+                "Same money in ${sp.benchmark}", "${Fmt.inr(sp.benchmarkValue)} (${Fmt.signedPercent(niftyReturn)})",
+                valueColor = changeColor(niftyReturn),
+            )
+            val diff = sp.value - sp.benchmarkValue
+            ChangeText(
+                if (diff >= 0) "Ahead of the ${sp.benchmark} by ${Fmt.inr(diff)}" else "Behind the ${sp.benchmark} by ${Fmt.inr(-diff)}",
+                diff,
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
+            )
+            Row(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 4.dp)) {
+                val h = MaterialTheme.typography.labelSmall
+                Text("Holding", style = h, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                Text("Yours", style = h, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.End, modifier = Modifier.width(72.dp))
+                Text("Nifty 50", style = h, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.End, modifier = Modifier.width(72.dp))
+                Text("vs", style = h, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.End, modifier = Modifier.width(76.dp))
+            }
+            HorizontalDivider()
+            sp.rows.forEachIndexed { i, r ->
+                if (i > 0) HorizontalDivider()
+                Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(r.position.symbol, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            "since ~${r.avgBuyDate.format(monthYear)} · ${Fmt.inr(r.position.value)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    ChangeText(Fmt.signedPercent(r.holdingReturn), r.holdingReturn, Modifier.width(72.dp), textAlign = TextAlign.End)
+                    ChangeText(Fmt.signedPercent(r.benchmarkReturn), r.benchmarkReturn, Modifier.width(72.dp), textAlign = TextAlign.End)
+                    ChangeText(String.format(Locale.US, "%+.0f pp", r.excess * 100), r.excess, Modifier.width(76.dp), textAlign = TextAlign.End)
+                }
+            }
+        }
+        if (sp.withoutHistory.isNotEmpty()) {
+            Text(
+                "Not compared (no dated purchase in the imported trades, e.g. transferred in or bought earlier): " +
+                    sp.withoutHistory.joinToString { it.symbol },
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
+    }
+}
+
+/** Period | beat count | holdings' weighted return | (the index's return). */
+@Composable
+private fun ComparisonTable(rows: List<IndexComparison>, showIndex: Boolean) {
+    val header = MaterialTheme.typography.labelSmall
+    Row(Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
+        Text("Period", style = header, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(52.dp))
+        Text("Beat index", style = header, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+        Text("Holdings", style = header, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.End, modifier = Modifier.width(80.dp))
+        if (showIndex) Text("Index", style = header, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.End, modifier = Modifier.width(72.dp))
+    }
+    HorizontalDivider()
+    rows.forEach { c ->
+        Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(c.period.label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.width(52.dp))
+            Text("${c.beat} of ${c.measured}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            ChangeText(Fmt.signedPercent(c.weightedReturn), c.weightedReturn, Modifier.width(80.dp), textAlign = TextAlign.End)
+            if (showIndex) ChangeText(Fmt.signedPercent(c.indexReturn), c.indexReturn, Modifier.width(72.dp), textAlign = TextAlign.End)
+        }
+    }
+}
+
+/** A card for one index's holdings: summary header (tap to fold) and [content]. */
+@Composable
+private fun GroupCard(g: GroupSummary, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    var open by rememberSaveable(g.group) { mutableStateOf(true) }
+    ElevatedCard(modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Row(Modifier.fillMaxWidth().clickable { open = !open }, verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("${g.group.label} · ${g.positions.size}", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "${Fmt.inr(g.value)} · ${String.format(Locale.US, "%.1f%%", g.share * 100)} of portfolio",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row {
+                        ChangeText("P&L ${Fmt.signedPercent(g.pnlPct)} (${Fmt.inr(g.pnl, signed = true)})", g.pnl, style = MaterialTheme.typography.bodySmall)
+                        g.dayChange?.let {
+                            Text(" · ", style = MaterialTheme.typography.bodySmall)
+                            ChangeText("latest ${Fmt.inr(it, signed = true)}", it, style = MaterialTheme.typography.bodySmall)
+                        }
                     }
                 }
+                Icon(
+                    if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    contentDescription = if (open) "Fold ${g.group.label}" else "Show ${g.group.label}",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (open) {
+                Column(Modifier.padding(top = 8.dp)) { content() }
+            }
         }
     }
 }

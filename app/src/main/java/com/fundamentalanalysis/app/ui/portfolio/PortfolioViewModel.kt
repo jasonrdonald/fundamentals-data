@@ -35,6 +35,8 @@ data class PortfolioUiState(
     val tab: PortfolioTab = PortfolioTab.HOLDINGS,
     val sort: HoldingSort = HoldingSort.VALUE,
     val holdings: List<Position> = emptyList(),
+    /** Holdings by index, each group sorted by [sort]. */
+    val groups: List<com.fundamentalanalysis.app.domain.model.GroupSummary> = emptyList(),
 )
 
 /** Import dialog state. */
@@ -70,14 +72,8 @@ class PortfolioViewModel @Inject constructor(
             broker = b?.takeIf { it in brokers },
             tab = t,
             sort = s,
-            holdings = summary?.positions.orEmpty().let { list ->
-                when (s) {
-                    HoldingSort.VALUE -> list.sortedByDescending { it.value }
-                    HoldingSort.PNL -> list.sortedByDescending { it.pnlPct ?: Double.NEGATIVE_INFINITY }
-                    HoldingSort.DAY -> list.sortedByDescending { it.tracked?.metrics?.change1d ?: Double.NEGATIVE_INFINITY }
-                    HoldingSort.NAME -> list.sortedBy { it.symbol }
-                }
-            },
+            holdings = summary?.positions.orEmpty().sortedBy(s),
+            groups = summary?.groups.orEmpty().map { g -> g.copy(positions = g.positions.sortedBy(s)) },
         )
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PortfolioUiState())
 
@@ -134,4 +130,11 @@ class PortfolioViewModel @Inject constructor(
         const val KEY_TAB = "portfolio_tab"
         const val KEY_SORT = "portfolio_sort"
     }
+}
+
+private fun List<Position>.sortedBy(sort: HoldingSort): List<Position> = when (sort) {
+    HoldingSort.VALUE -> sortedByDescending { it.value }
+    HoldingSort.PNL -> sortedByDescending { it.pnlPct ?: Double.NEGATIVE_INFINITY }
+    HoldingSort.DAY -> sortedByDescending { it.tracked?.metrics?.change1d ?: Double.NEGATIVE_INFINITY }
+    HoldingSort.NAME -> sortedBy { it.symbol }
 }

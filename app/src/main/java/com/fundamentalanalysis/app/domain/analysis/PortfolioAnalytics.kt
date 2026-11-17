@@ -3,7 +3,12 @@ package com.fundamentalanalysis.app.domain.analysis
 import com.fundamentalanalysis.app.domain.model.Allocation
 import com.fundamentalanalysis.app.domain.model.AnalyzedStock
 import com.fundamentalanalysis.app.domain.model.HoldingKind
+import com.fundamentalanalysis.app.domain.model.GroupSummary
 import com.fundamentalanalysis.app.domain.model.IndexComparison
+import com.fundamentalanalysis.app.domain.model.IndexGroup
+import com.fundamentalanalysis.app.domain.model.MarketIndex
+import com.fundamentalanalysis.app.domain.model.PurchaseComparison
+import com.fundamentalanalysis.app.domain.model.SincePurchase
 import com.fundamentalanalysis.app.domain.model.Lot
 import com.fundamentalanalysis.app.domain.model.Period
 import com.fundamentalanalysis.app.domain.model.PortfolioData
@@ -17,7 +22,6 @@ object PortfolioAnalytics {
 
     const val FUNDS_SECTOR = "Funds & ETFs"
     private const val UNCLASSIFIED = "Unclassified"
-    private val INDEX_NAMES = mapOf("NIFTY 50" to "Nifty 50", "NIFTY NEXT 50" to "Nifty Next 50", "NIFTY MIDCAP 150" to "Nifty Midcap 150")
     val COMPARE_PERIODS = listOf(Period.M1, Period.M3, Period.M6, Period.Y1)
 
     /**
@@ -25,7 +29,7 @@ object PortfolioAnalytics {
      * the dataset's latest close for tracked stocks (fresher than the snapshot) and the broker's
      * close otherwise. Sector comes from NSE's classification when tracked, else the broker's.
      */
-    fun summarize(data: PortfolioData, tracked: Map<String, AnalyzedStock>): PortfolioSummary {
+    fun summarize(data: PortfolioData, tracked: Map<String, AnalyzedStock>, benchmark: MarketIndex? = null): PortfolioSummary {
         val brokerOf = data.accounts.associate { it.id to it.broker }
         val asOf = data.accounts.associate { it.id to it.holdingsAsOf }
         val notes = data.notes.filter { it.comment.isNotBlank() }.groupBy { it.symbol }
@@ -73,14 +77,18 @@ object PortfolioAnalytics {
         }.sortedByDescending { it.value }
 
         val trackedPositions = positions.filter { it.tracked != null }
-        val vsIndex = COMPARE_PERIODS.map { period ->
-            val measured = trackedPositions.mapNotNull { p -> p.tracked!!.metrics.returns[period]?.let { p to it } }
-            val weight = measured.sumOf { it.first.value }
-            IndexComparison(
-                period = period,
-                measured = measured.size,
-                beat = measured.count { (p, _) -> (p.tracked!!.metrics.excess(period) ?: 0.0) > 0 },
-                weightedReturn = if (weight > 0) measured.sumOf { (p, r) -> p.value * r } / weight else null,
+        val vsIndex = compare(trackedPositions, withIndexReturn = false)
+        val groups = positions.groupBy { IndexGroup.of(it) }.toSortedMap().map { (group, ps) ->
+            val value = ps.sumOf { it.value }
+            GroupSummary(
+                group = group,
+                positions = ps,
+                value = value,
+                invested = ps.sumOf { it.invested },
+                share = if (total > 0) value / total else 0.0,
+                dayChange = ps.mapNotNull { it.dayChange }.takeIf { it.isNotEmpty() }?.sum(),
+                vsIndex = if (group.tracked) compare(ps, withIndexReturn = true) else emptyList(),
+                sincePurchase = if (group == IndexGroup.OTHER && benchmark != null) sincePurchase(ps, data, benchmark) else null,
             )
         }
 
@@ -105,16 +113,66 @@ object PortfolioAnalytics {
             dayChange = trackedPositions.mapNotNull { it.dayChange }.takeIf { it.isNotEmpty() }?.sum(),
             bySector = allocation(positions.groupBy { it.sector }),
             byBroker = byBroker,
-            byIndex = allocation(positions.groupBy { p ->
-                p.tracked?.stock?.indexSymbol?.let { INDEX_NAMES[it] ?: it } ?: if (p.kind == HoldingKind.FUND) FUNDS_SECTOR else "Not in a tracked index"
-            }),
+            byIndex = allocation(positions.groupBy { IndexGroup.of(it).label }),
             vsIndex = vsIndex,
+            groups = groups,
             activity = activity,
             trades = data.trades,
             actions = data.actions,
             lastImport = data.imports.maxByOrNull { it.atMillis },
             pricedAsOf = positions.mapNotNull { it.priceDate }.maxOrNull(),
         )
+    }
+
+    /**
+     * How many of [positions] (tracked ones only) beat their own index per period, and their
+     * value-weighted return. [withIndexReturn] adds the index's own return (one-index groups).
+     */
+    private fun compare(positions: List<Position>, withIndexReturn: Boolean): List<IndexComparison> = COMPARE_PERIODS.map { period ->
+        val measured = positions.mapNotNull { p -> p.tracked?.metrics?.returns?.get(period)?.let { p to it } }
+        val weight = measured.sumOf { it.first.value }
+        IndexComparison(
+            period = period,
+            measured = measured.size,
+            beat = measured.count { (p, _) -> (p.tracked!!.metrics.excess(period) ?: 0.0) > 0 },
+            weightedReturn = if (weight > 0) measured.sumOf { (p, r) -> p.value * r } / weight else null,
+            indexReturn = if (withIndexReturn) positions.firstNotNullOfOrNull { it.tracked?.metrics?.benchmarkReturns?.get(period) } else null,
+        )
+    }
+
+    /**
+     * Compares each holding with [benchmark] over the time since it was bought. The purchase date
+     * is the value-weighted average of the holding's buy trades (and priced allotments, e.g.
+     * IPOs) across the brokers that hold it; the benchmark's close on that date comes from daily
+     * sessions when available, otherwise from month-end closes.
+     */
+    internal fun sincePurchase(positions: List<Position>, data: PortfolioData, benchmark: MarketIndex): SincePurchase {
+        val latest = benchmark.daily.lastOrNull()?.close ?: benchmark.monthly.lastOrNull()?.close
+        val buys = data.trades.filter { it.side == TradeSide.BUY }.map { Triple(it.isin.ifBlank { it.symbol }, it.date, it.value) } +
+            data.actions.filter { it.incoming && (it.price ?: 0.0) > 0 }
+                .map { a -> Triple(data.holdings.firstOrNull { it.symbol == a.symbol }?.isin?.ifBlank { null } ?: a.symbol, a.date, a.qty * a.price!!) }
+        val byKey = buys.groupBy({ it.first }, { it.second to it.third })
+        val rows = mutableListOf<PurchaseComparison>()
+        val missing = mutableListOf<Position>()
+        positions.forEach { p ->
+            val lots = byKey[p.isin.ifBlank { p.symbol }].orEmpty().ifEmpty { byKey[p.symbol].orEmpty() }
+            val amount = lots.sumOf { it.second }
+            val date = if (amount > 0) java.time.LocalDate.ofEpochDay(Math.round(lots.sumOf { it.first.toEpochDay() * it.second } / amount)) else null
+            val base = date?.let { closeOn(benchmark, it) }
+            val ret = p.pnlPct
+            if (date == null || base == null || latest == null || ret == null) missing += p
+            else rows += PurchaseComparison(p, date, ret, latest / base - 1)
+        }
+        return SincePurchase(benchmark.name, rows.sortedByDescending { it.excess }, missing)
+    }
+
+    /** The benchmark's close on [date]: last daily session on or before it, else the previous month-end. */
+    internal fun closeOn(index: MarketIndex, date: java.time.LocalDate): Double? {
+        val daily = index.daily
+        if (daily.isNotEmpty() && !date.isBefore(daily.first().date)) return daily.lastOrNull { !it.date.isAfter(date) }?.close
+        // Monthly bars are dated the 1st; the last close before [date] is the previous month's.
+        return index.monthly.lastOrNull { it.date.isBefore(date.withDayOfMonth(1)) }?.close
+            ?: index.monthly.firstOrNull { !it.date.isAfter(date) }?.close
     }
 
     private val ACRONYMS = setOf("IT", "FMCG", "ETF", "ETFS", "PSU", "NBFC", "REIT", "INVIT", "AMC")
