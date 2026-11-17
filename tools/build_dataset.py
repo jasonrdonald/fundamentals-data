@@ -78,6 +78,23 @@ def session_open(yahoo_symbol: str) -> float | None:
     return opens[0] if opens else None
 
 
+def last_session_complete(meta: dict, now: float) -> bool:
+    """True when the session that produced `regularMarketTime` is over.
+
+    `currentTradingPeriod` rolls over to the next day's session at midnight (exchange time), so
+    "now is past the current period's end" alone is false overnight and on mornings before the
+    close; the previous day's session must still count as finished then. A session is complete if
+    it is from an earlier exchange-local day than now, or today's regular period has ended.
+    """
+    market_time = meta.get("regularMarketTime")
+    if not market_time:
+        return False
+    if local_date(market_time, meta) < local_date(int(now), meta):
+        return True
+    end = ((meta.get("currentTradingPeriod") or {}).get("regular") or {}).get("end")
+    return end is not None and now >= end
+
+
 def fetch_daily(yahoo_symbol: str, range_: str = "10y") -> list[dict]:
     r = chart(yahoo_symbol, "1d", range_)
     meta = r.get("meta", {})
@@ -98,10 +115,8 @@ def fetch_daily(yahoo_symbol: str, range_: str = "10y") -> list[dict]:
 
     # Yahoo often leaves the most recent finished session empty in the series while its
     # metadata already carries the final close/high/low. Rebuild that bar once the session ended.
-    regular = (meta.get("currentTradingPeriod") or {}).get("regular") or {}
     market_time, price = meta.get("regularMarketTime"), meta.get("regularMarketPrice")
-    session_ended = regular.get("end") is not None and time.time() >= regular["end"]
-    if market_time and price and session_ended:
+    if market_time and price and last_session_complete(meta, time.time()):
         day = local_date(market_time, meta)
         if not bars or bars[-1]["d"] < day:
             o = session_open(yahoo_symbol) or (bars[-1]["c"] if bars else price)
