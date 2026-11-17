@@ -24,6 +24,22 @@ data class PortfolioBackupDto(
     val portfolioActions: List<BackupActionDto> = emptyList(),
     val portfolioNotes: List<BackupNoteDto> = emptyList(),
     val brokerFees: List<BackupFeeDto> = emptyList(),
+    /** Public per-security data; only splits / bonuses are used (to rebuild costs from trades). */
+    val market: List<BackupMarketDto> = emptyList(),
+)
+
+@Serializable
+data class BackupMarketDto(
+    val symbol: String = "",
+    val splits: List<BackupSplitDto> = emptyList(),
+)
+
+/** A split or bonus: from [date], every [den] shares became [num] (a 1:1 bonus is 2/1). */
+@Serializable
+data class BackupSplitDto(
+    val date: String = "",
+    val num: Int = 0,
+    val den: Int = 0,
 )
 
 @Serializable
@@ -143,6 +159,8 @@ object PortfolioBackupParser {
             portfolioActions = dto.portfolioActions.filter { it.accountId in ids },
             portfolioNotes = dto.portfolioNotes.filter { it.accountId in ids },
             brokerFees = dto.brokerFees.filter { it.accountId in ids },
+            market = dto.brokerHoldings.filter { it.id in ids }.flatMap { h -> h.rows.map { it.symbol } }.toSet()
+                .let { held -> dto.market.filter { it.symbol in held && it.splits.isNotEmpty() } },
         )
         val preview = ImportPreview(
             fileName = fileName,

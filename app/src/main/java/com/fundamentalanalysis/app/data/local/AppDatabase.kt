@@ -13,10 +13,10 @@ import androidx.room.RoomDatabase
         PortfolioAccountEntity::class, PortfolioHoldingEntity::class, PortfolioTradeEntity::class,
         PortfolioActionEntity::class, PortfolioNoteEntity::class, PortfolioFeeEntity::class, PortfolioImportEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = true,
     // 6 -> 7 only adds the portfolio tables.
-    autoMigrations = [AutoMigration(from = 6, to = 7)],
+    autoMigrations = [AutoMigration(from = 6, to = 7), AutoMigration(from = 7, to = 8)],
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun marketDao(): MarketDao

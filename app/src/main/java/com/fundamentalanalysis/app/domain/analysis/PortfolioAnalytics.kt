@@ -39,7 +39,9 @@ object PortfolioAnalytics {
                 val first = rows.first()
                 val stock = tracked[first.symbol]?.takeIf { first.kind == HoldingKind.STOCK }
                 val qty = rows.sumOf { it.qty }
-                val invested = rows.sumOf { it.qty * it.avgPrice }
+                // Only shares with a known cost count towards cost and P&L (see BrokerHolding.costSource).
+                val costedQty = rows.sumOf { it.costedQty }
+                val invested = rows.sumOf { it.costedQty * it.avgPrice }
                 val datasetPrice = stock?.metrics?.lastClose
                 val price = datasetPrice ?: rows.maxBy { asOf[it.accountId] ?: java.time.LocalDate.MIN }.close
                 val change = stock?.metrics?.change1d
@@ -52,7 +54,7 @@ object PortfolioAnalytics {
                         first.kind == HoldingKind.FUND -> FUNDS_SECTOR
                         else -> rows.firstNotNullOfOrNull { it.sector.ifBlank { null } }?.let(::normalizeSector) ?: UNCLASSIFIED
                     },
-                    lots = rows.map { Lot(brokerOf[it.accountId] ?: "?", it.qty, it.avgPrice) }.sortedByDescending { it.qty },
+                    lots = rows.map { Lot(brokerOf[it.accountId] ?: "?", it.qty, it.avgPrice, it.costedQty, it.costSource) }.sortedByDescending { it.qty },
                     qty = qty,
                     invested = invested,
                     price = price,
@@ -62,6 +64,7 @@ object PortfolioAnalytics {
                     dayChange = change?.let { c -> qty * price * c / (1 + c) },
                     tracked = stock,
                     note = notes[first.symbol]?.joinToString(" · ") { it.comment },
+                    costedQty = costedQty,
                 )
             }
             .sortedByDescending { it.value }
@@ -89,6 +92,7 @@ object PortfolioAnalytics {
                 dayChange = ps.mapNotNull { it.dayChange }.takeIf { it.isNotEmpty() }?.sum(),
                 vsIndex = if (group.tracked) compare(ps, withIndexReturn = true) else emptyList(),
                 sincePurchase = if (group == IndexGroup.OTHER && benchmark != null) sincePurchase(ps, data, benchmark) else null,
+                costedValue = ps.sumOf { it.costedValue },
             )
         }
 
@@ -121,6 +125,7 @@ object PortfolioAnalytics {
             actions = data.actions,
             lastImport = data.imports.maxByOrNull { it.atMillis },
             pricedAsOf = positions.mapNotNull { it.priceDate }.maxOrNull(),
+            costedValue = positions.sumOf { it.costedValue },
         )
     }
 

@@ -1,5 +1,7 @@
 package com.fundamentalanalysis.app.ui.portfolio
 
+import com.fundamentalanalysis.app.data.portfolio.HoldingsReconciler
+import com.fundamentalanalysis.app.domain.model.CostSource
 import com.fundamentalanalysis.app.domain.model.IndexGroup
 import com.fundamentalanalysis.app.domain.model.Period
 import com.fundamentalanalysis.app.domain.model.IndexComparison
@@ -91,7 +93,7 @@ fun PortfolioScreen(
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { viewModel.onFilePicked(it.toString()) }
     }
-    val pick = { picker.launch(arrayOf("application/json", "application/octet-stream", "text/plain")) }
+    val pick = { picker.launch(arrayOf("application/json", "application/octet-stream", "text/plain", XLSX_MIME)) }
 
     ScreenScaffold(
         title = "Portfolio",
@@ -230,10 +232,16 @@ private fun SummaryCard(s: PortfolioSummary, modifier: Modifier) {
         Text(Fmt.inr(s.value), style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.SemiBold)
         Row(verticalAlignment = Alignment.CenterVertically) {
             ChangeText("${Fmt.inr(s.pnl, signed = true)} (${Fmt.signedPercent(s.pnlPct)})", s.pnl, style = MaterialTheme.typography.titleMedium)
-            Text("  overall", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                if (s.uncostedValue > 1) "  on holdings with a known cost" else "  overall",
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
         Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             KeyValueRow("Invested (cost)", Fmt.inr(s.invested))
+            if (s.uncostedValue > 1) {
+                KeyValueRow("No recorded cost (not in P&L)", "${Fmt.inr(s.uncostedValue)} · ${s.uncostedHoldings} holdings")
+            }
             s.dayChange?.let { KeyValueRow("Latest session (tracked stocks)", Fmt.inr(it, signed = true), valueColor = changeColor(it)) }
             KeyValueRow("Holdings", "${s.positions.size} · ${s.trackedCount} in tracked indices")
         }
@@ -269,11 +277,15 @@ private fun HoldingRow(p: Position, onOpenStock: (String) -> Unit) {
             }
             Column(horizontalAlignment = Alignment.End) {
                 Text(Fmt.inr(p.value), style = MaterialTheme.typography.titleSmall)
-                ChangeText("${Fmt.signedPercent(p.pnlPct)} · ${Fmt.inr(p.pnl, signed = true)}", p.pnl, style = MaterialTheme.typography.bodySmall)
+                if (p.costKnown) {
+                    ChangeText("${Fmt.signedPercent(p.pnlPct)} · ${Fmt.inr(p.pnl, signed = true)}", p.pnl, style = MaterialTheme.typography.bodySmall)
+                } else {
+                    Text("P&L —", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         }
         Text(
-            "${Fmt.qty(p.qty)} × ${Fmt.rupees(p.price)} · avg ${Fmt.rupees(p.avgPrice)}" +
+            "${Fmt.qty(p.qty)} × ${Fmt.rupees(p.price)} · ${costText(p)}" +
                 (tracked?.metrics?.change1d?.let { " · today ${Fmt.signedPercent(it)}" } ?: "") +
                 " · " + p.lots.joinToString { if (p.lots.size > 1) "${it.broker} ${Fmt.qty(it.qty)}" else it.broker } +
                 if (p.priceSource == PriceSource.BROKER) " · price ${Fmt.day(p.priceDate)}" else "",
@@ -285,6 +297,21 @@ private fun HoldingRow(p: Position, onOpenStock: (String) -> Unit) {
             Text("“$it”", style = MaterialTheme.typography.labelSmall, fontStyle = FontStyle.Italic, modifier = Modifier.padding(top = 2.dp))
         }
     }
+}
+
+/** "avg ₹637.53 (rebuilt from trades) · 10 without cost", or why there's no cost. */
+private fun costText(p: Position): String {
+    if (!p.costKnown) return "no recorded cost"
+    val rebuilt = p.lots.filter { it.costSource == CostSource.TRADES || it.costSource == CostSource.PARTIAL }
+    val fromFile = p.lots.filter { it.costSource == CostSource.FILE }
+    val source = when {
+        rebuilt.isNotEmpty() -> " (rebuilt from ${rebuilt.joinToString { it.broker }} trades)"
+        fromFile.isNotEmpty() && fromFile.size == p.lots.size -> " (holdings file)"
+        fromFile.isNotEmpty() -> " (${fromFile.joinToString { it.broker }} from holdings file)"
+        else -> ""
+    }
+    val missing = if (p.uncostedQty > 1e-6) " · ${Fmt.qty(p.uncostedQty)} without cost" else ""
+    return "avg ${Fmt.rupees(p.avgPrice)}$source$missing"
 }
 
 @Composable
@@ -618,8 +645,11 @@ private fun ImportDialog(state: ImportState, onConfirm: () -> Unit, onDismiss: (
     }
 }
 
+private const val XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
 @Composable
 private fun ReviewDialog(p: ImportPreview, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    if (p.isHoldingsFile) return HoldingsReviewDialog(p, onConfirm, onDismiss)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (p.canImport) "Import portfolio?" else "Nothing to import") },
@@ -662,5 +692,50 @@ private fun ReviewDialog(p: ImportPreview, onConfirm: () -> Unit, onDismiss: () 
         },
         confirmButton = { if (p.canImport) TextButton(onClick = onConfirm) { Text("Import") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text(if (p.canImport) "Cancel" else "Close") } },
+    )
+}
+
+/** Preview of a holdings workbook: per broker, what changes against the stored holdings. */
+@Composable
+private fun HoldingsReviewDialog(p: ImportPreview, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Update holdings?") },
+        text = {
+            Column(Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    listOfNotNull(p.fileName, p.exportedAt?.let { "prices as of $it" }).joinToString(" · "),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                p.holdingsUpdates.forEach { u ->
+                    Column {
+                        Text(u.broker + if (u.newAccount) " (new)" else "", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        val lines = buildList {
+                            add("${u.holdings} holdings" + (u.asOf?.let { " as of $it" } ?: ""))
+                            add(if (u.costChanged.isEmpty()) "Average costs unchanged" else "${u.costChanged.size} average costs updated: ${HoldingsReconciler.examples(u.costChanged)}")
+                            if (u.qtyChanged.isNotEmpty()) add("${u.qtyChanged.size} quantities changed: ${HoldingsReconciler.examples(u.qtyChanged)}")
+                            if (u.added.isNotEmpty()) add("${u.added.size} new: ${HoldingsReconciler.examples(u.added)}")
+                            if (u.removed.isNotEmpty()) add("${u.removed.size} no longer held: ${HoldingsReconciler.examples(u.removed)}")
+                            if (u.withoutCost > 0) add("${u.withoutCost} without an average cost")
+                        }
+                        lines.forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    }
+                }
+                if (p.skipped.isNotEmpty()) {
+                    Text("Skipped", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
+                    Text(p.skipped.joinToString { it.broker }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(p.skipped.first().reason, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text(
+                    "Holdings, quantities, average costs and prices for these brokers are replaced by the file's. " +
+                        "Trades, corporate actions, notes and charges from the backup are kept. Everything stays on this phone.",
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = onConfirm) { Text("Update") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }

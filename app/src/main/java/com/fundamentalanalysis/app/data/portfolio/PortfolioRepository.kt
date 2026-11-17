@@ -15,6 +15,7 @@ import com.fundamentalanalysis.app.data.local.PortfolioTradeEntity
 import com.fundamentalanalysis.app.di.DefaultDispatcher
 import com.fundamentalanalysis.app.di.IoDispatcher
 import com.fundamentalanalysis.app.domain.model.BrokerHolding
+import com.fundamentalanalysis.app.domain.model.CostSource
 import com.fundamentalanalysis.app.domain.model.HoldingKind
 import com.fundamentalanalysis.app.domain.model.ImportPreview
 import com.fundamentalanalysis.app.domain.model.PortfolioAccount
@@ -49,6 +50,7 @@ class LocalPortfolioRepository @Inject constructor(
 
     /** The last file read, kept until the user confirms or picks another. */
     @Volatile private var pending: ParsedBackup? = null
+    @Volatile private var pendingHoldings: Pair<HoldingsPlan, ImportPreview>? = null
 
     override fun observePortfolio(): Flow<PortfolioData> = combine(
         dao.observeAccounts(), dao.observeHoldings(), dao.observeTrades(), dao.observeActions(),
@@ -56,7 +58,16 @@ class LocalPortfolioRepository @Inject constructor(
     ) { accounts, holdings, trades, actions, (notes, fees, imports) ->
         PortfolioData(
             accounts = accounts.map { PortfolioAccount(it.id, it.broker, it.clientId, it.holdingsAsOf.toDate(), it.importedAtMillis) },
-            holdings = holdings.map { BrokerHolding(it.accountId, it.symbol, it.isin, kindOf(it.kind, it.isin), it.sector, it.qty, it.avgPrice, it.close) },
+            holdings = holdings.map { h ->
+                val source = runCatching { CostSource.valueOf(h.costSource) }.getOrDefault(CostSource.BROKER)
+                // Rows imported before costs were rebuilt: a broker average of 0 means unknown, not free.
+                val unknown = source == CostSource.BROKER && h.avgPrice <= 0
+                BrokerHolding(
+                    h.accountId, h.symbol, h.isin, kindOf(h.kind, h.isin), h.sector, h.qty, h.avgPrice, h.close,
+                    costedQty = if (unknown) 0.0 else h.costedQty ?: h.qty,
+                    costSource = if (unknown) CostSource.UNKNOWN else source,
+                )
+            },
             trades = trades.mapNotNull { t ->
                 val side = when (t.side.lowercase()) { "buy" -> TradeSide.BUY; "sell" -> TradeSide.SELL; else -> return@mapNotNull null }
                 PortfolioTrade(t.id, t.accountId, t.symbol, t.isin, t.date.toDate() ?: return@mapNotNull null, side, t.qty, t.price, t.exchange, kindOf(t.kind, t.isin))
@@ -75,20 +86,51 @@ class LocalPortfolioRepository @Inject constructor(
         val name = context.contentResolver.query(parsed, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
             if (c.moveToFirst()) c.getString(0) else null
         }
-        val text = context.contentResolver.openInputStream(parsed)?.use { it.readBytes().decodeToString() }
+        val bytes = context.contentResolver.openInputStream(parsed)?.use { it.readBytes() }
             ?: throw UnsupportedBackupException("Couldn't open the file.")
-        PortfolioBackupParser.parse(json, text, name).also { pending = it }.preview
+        pending = null
+        pendingHoldings = null
+        if (HoldingsWorkbookParser.isWorkbook(bytes)) {
+            // Holdings workbook: compare with what's stored, write nothing yet.
+            val workbook = HoldingsWorkbookParser.parse(bytes)
+            val plan = HoldingsReconciler.plan(workbook, dao.accounts(), dao.holdings(), System.currentTimeMillis())
+            val preview = ImportPreview(
+                fileName = name,
+                exportedAt = workbook.brokers.firstNotNullOfOrNull { it.asOf },
+                included = emptyList(),
+                skipped = workbook.skipped,
+                holdingsUpdates = plan.updates,
+            )
+            pendingHoldings = plan to preview
+            return@withContext preview
+        }
+        PortfolioBackupParser.parse(json, bytes.decodeToString(), name).also { pending = it }.preview
     }
 
     override suspend fun confirmImport(): ImportPreview = withContext(io) {
+        pendingHoldings?.let { (plan, preview) ->
+            val now = System.currentTimeMillis()
+            dao.replaceHoldings(
+                plan.accounts, plan.holdings,
+                PortfolioImportEntity(
+                    atMillis = now, fileName = preview.fileName, exportedAt = preview.exportedAt,
+                    brokers = plan.updates.joinToString { it.broker }, holdings = plan.holdings.size, trades = 0,
+                ),
+            )
+            pendingHoldings = null
+            return@withContext preview
+        }
         val parsed = pending ?: throw IllegalStateException("Pick a file first.")
-        dao.replaceAccounts(parsed.toRows(System.currentTimeMillis()), parsed.record(System.currentTimeMillis()))
+        // Accounts created by a holdings workbook give way to the backup's real accounts.
+        val fileAccounts = parsed.backup.brokerAccounts.map { "holdings-file:${PortfolioBackupParser.brokerName(it.broker)}" }
+        dao.replaceAccounts(parsed.toRows(System.currentTimeMillis()), parsed.record(System.currentTimeMillis()), fileAccounts)
         pending = null
         parsed.preview
     }
 
     override fun cancelImport() {
         pending = null
+        pendingHoldings = null
     }
 
     override suspend fun clear() = withContext(io) { dao.clearAll() }
@@ -103,6 +145,7 @@ class LocalPortfolioRepository @Inject constructor(
 internal fun ParsedBackup.toRows(now: Long): PortfolioRows {
     val b = backup
     val snapshots = b.brokerHoldings.associateBy { it.id }
+    val splits = b.market.associate { it.symbol to it.splits }
     return PortfolioRows(
         accounts = b.brokerAccounts.map { a ->
             PortfolioAccountEntity(a.id, PortfolioBackupParser.brokerName(a.broker), PortfolioBackupParser.mask(a.clientId), snapshots[a.id]?.asOf, now)
@@ -111,11 +154,16 @@ internal fun ParsedBackup.toRows(now: Long): PortfolioRows {
             // One row per security; a snapshot listing the same security twice is merged.
             h.rows.groupBy { it.isin to it.symbol }.map { (_, rows) ->
                 val qty = rows.sumOf { it.qty }
+                val merged = rows.first().copy(qty = qty, avg = if (qty > 0) rows.sumOf { it.qty * it.avg } / qty else rows.first().avg)
+                // Brokers that export no average price get one rebuilt from the account's own trades.
+                val cost = CostBasis.of(merged, h.id, b.trades, b.portfolioActions, splits[merged.symbol].orEmpty())
                 PortfolioHoldingEntity(
-                    accountId = h.id, symbol = rows.first().symbol, isin = rows.first().isin, kind = rows.first().kind,
-                    sector = rows.first().sector, qty = qty,
-                    avgPrice = if (qty > 0) rows.sumOf { it.qty * it.avg } / qty else rows.first().avg,
-                    close = rows.first().close,
+                    accountId = h.id, symbol = merged.symbol, isin = merged.isin, kind = merged.kind,
+                    sector = merged.sector, qty = qty,
+                    avgPrice = cost.avgPrice,
+                    close = merged.close,
+                    costedQty = cost.costedQty.takeIf { cost.source != CostSource.BROKER },
+                    costSource = cost.source.name,
                 )
             }
         },

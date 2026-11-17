@@ -240,7 +240,7 @@ private fun PortfolioCard(p: com.fundamentalanalysis.app.domain.model.PortfolioS
                     Text(Fmt.inr(p.value), style = MaterialTheme.typography.headlineSmall, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
                     Row {
                         com.fundamentalanalysis.app.ui.components.ChangeText(
-                            "${Fmt.inr(p.pnl, signed = true)} (${Fmt.signedPercent(p.pnlPct)}) overall", p.pnl,
+                            "${Fmt.inr(p.pnl, signed = true)} (${Fmt.signedPercent(p.pnlPct)}) ${if (p.uncostedValue > 1) "on known cost" else "overall"}", p.pnl,
                             style = MaterialTheme.typography.bodyMedium,
                         )
                         p.dayChange?.let {

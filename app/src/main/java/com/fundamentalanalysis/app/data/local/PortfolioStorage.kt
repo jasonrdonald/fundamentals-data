@@ -1,5 +1,6 @@
 package com.fundamentalanalysis.app.data.local
 
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Entity
 import androidx.room.Insert
@@ -33,9 +34,14 @@ data class PortfolioHoldingEntity(
     val kind: String,
     val sector: String,
     val qty: Double,
+    /** Average cost of the [costedQty] shares that have one (see [costSource]). */
     val avgPrice: Double,
     /** Broker's last close on [PortfolioAccountEntity.holdingsAsOf]. */
     val close: Double,
+    /** Shares whose cost is known; null = all of [qty]. */
+    val costedQty: Double? = null,
+    /** BROKER, TRADES, PARTIAL or UNKNOWN (see data.portfolio.CostSource). */
+    @ColumnInfo(defaultValue = "BROKER") val costSource: String = "BROKER",
 )
 
 @Entity(tableName = "portfolio_trades")
@@ -111,6 +117,8 @@ data class PortfolioRows(
 interface PortfolioDao {
     @Query("SELECT * FROM portfolio_accounts ORDER BY broker") fun observeAccounts(): Flow<List<PortfolioAccountEntity>>
     @Query("SELECT * FROM portfolio_holdings") fun observeHoldings(): Flow<List<PortfolioHoldingEntity>>
+    @Query("SELECT * FROM portfolio_accounts") suspend fun accounts(): List<PortfolioAccountEntity>
+    @Query("SELECT * FROM portfolio_holdings") suspend fun holdings(): List<PortfolioHoldingEntity>
     @Query("SELECT * FROM portfolio_trades ORDER BY date DESC, id DESC") fun observeTrades(): Flow<List<PortfolioTradeEntity>>
     @Query("SELECT * FROM portfolio_actions ORDER BY date DESC") fun observeActions(): Flow<List<PortfolioActionEntity>>
     @Query("SELECT * FROM portfolio_notes") fun observeNotes(): Flow<List<PortfolioNoteEntity>>
@@ -142,8 +150,8 @@ interface PortfolioDao {
 
     /** Replaces everything stored for the imported accounts; other accounts are left alone. */
     @Transaction
-    suspend fun replaceAccounts(rows: PortfolioRows, record: PortfolioImportEntity) {
-        val ids = rows.accounts.map { it.id }
+    suspend fun replaceAccounts(rows: PortfolioRows, record: PortfolioImportEntity, alsoRemove: List<String> = emptyList()) {
+        val ids = rows.accounts.map { it.id } + alsoRemove
         deleteAccounts(ids); deleteHoldings(ids); deleteTrades(ids); deleteActions(ids); deleteNotes(ids); deleteFees(ids)
         insertAccounts(rows.accounts)
         insertHoldings(rows.holdings)
@@ -151,6 +159,18 @@ interface PortfolioDao {
         insertActions(rows.actions)
         insertNotes(rows.notes)
         insertFees(rows.fees)
+        insertImport(record)
+    }
+
+    /**
+     * Replaces the holdings of [accounts] (a holdings workbook); their trades, actions, notes and
+     * charges are kept. Accounts are inserted or updated (snapshot date).
+     */
+    @Transaction
+    suspend fun replaceHoldings(accounts: List<PortfolioAccountEntity>, holdings: List<PortfolioHoldingEntity>, record: PortfolioImportEntity) {
+        deleteHoldings(accounts.map { it.id })
+        insertAccounts(accounts)
+        insertHoldings(holdings)
         insertImport(record)
     }
 

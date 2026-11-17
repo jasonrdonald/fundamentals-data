@@ -15,6 +15,20 @@ data class PortfolioAccount(
 
 enum class HoldingKind(val label: String) { STOCK("Stock"), FUND("Fund / ETF") }
 
+/** Where a holding's cost comes from. */
+enum class CostSource(val label: String) {
+    /** The broker's own average price (it already reflects corporate actions). */
+    BROKER("broker's average"),
+    /** Rebuilt from the account's trades because the broker reported no cost. */
+    TRADES("rebuilt from trades"),
+    /** Rebuilt from trades for only part of the quantity; the rest has no recorded cost. */
+    PARTIAL("partly rebuilt from trades"),
+    /** No cost from the broker and none in the trade history. */
+    UNKNOWN("no recorded cost"),
+    /** From an imported holdings workbook (its cost reflects splits, mergers and demergers). */
+    FILE("holdings file"),
+}
+
 /** One broker's position in one security, as reported in its holdings snapshot. */
 data class BrokerHolding(
     val accountId: String,
@@ -23,8 +37,12 @@ data class BrokerHolding(
     val kind: HoldingKind,
     val sector: String,
     val qty: Double,
+    /** Average cost of the [costedQty] shares that have one. */
     val avgPrice: Double,
     val close: Double,
+    /** Shares whose cost is known (all of [qty] unless [costSource] is PARTIAL or UNKNOWN). */
+    val costedQty: Double = qty,
+    val costSource: CostSource = CostSource.BROKER,
 )
 
 enum class TradeSide { BUY, SELL }
@@ -99,7 +117,13 @@ data class PortfolioData(
 enum class PriceSource { DATASET, BROKER }
 
 /** A broker's part of a [Position]. */
-data class Lot(val broker: String, val qty: Double, val avgPrice: Double)
+data class Lot(
+    val broker: String,
+    val qty: Double,
+    val avgPrice: Double,
+    val costedQty: Double = qty,
+    val costSource: CostSource = CostSource.BROKER,
+)
 
 /** One security across every broker, valued at the freshest price available. */
 data class Position(
@@ -119,10 +143,16 @@ data class Position(
     /** Present when the stock is one of the app's tracked index constituents. */
     val tracked: AnalyzedStock?,
     val note: String?,
+    /** Shares with a known cost; P&L covers only these. */
+    val costedQty: Double = qty,
 ) {
-    val pnl: Double get() = value - invested
-    val pnlPct: Double? get() = if (invested > 0) value / invested - 1 else null
-    val avgPrice: Double get() = if (qty > 0) invested / qty else 0.0
+    /** Current value of the shares with a known cost. */
+    val costedValue: Double get() = costedQty * price
+    val uncostedQty: Double get() = (qty - costedQty).coerceAtLeast(0.0)
+    val costKnown: Boolean get() = costedQty > 0
+    val pnl: Double get() = costedValue - invested
+    val pnlPct: Double? get() = if (invested > 0) costedValue / invested - 1 else null
+    val avgPrice: Double get() = if (costedQty > 0) invested / costedQty else 0.0
 }
 
 data class Allocation(val label: String, val value: Double, val share: Double, val count: Int)
@@ -191,7 +221,7 @@ data class SincePurchase(
 ) {
     val beat: Int get() = rows.count { it.excess > 0 }
     val invested: Double get() = rows.sumOf { it.position.invested }
-    val value: Double get() = rows.sumOf { it.position.value }
+    val value: Double get() = rows.sumOf { it.position.costedValue }
     val benchmarkValue: Double get() = rows.sumOf { it.benchmarkValue }
 }
 
@@ -209,9 +239,11 @@ data class GroupSummary(
     val vsIndex: List<IndexComparison>,
     /** Other stocks only: each holding vs the Nifty 50 over the time since it was bought. */
     val sincePurchase: SincePurchase? = null,
+    /** Value of the shares with a known cost (P&L is measured on these). */
+    val costedValue: Double = value,
 ) {
-    val pnl: Double get() = value - invested
-    val pnlPct: Double? get() = if (invested > 0) value / invested - 1 else null
+    val pnl: Double get() = costedValue - invested
+    val pnlPct: Double? get() = if (invested > 0) costedValue / invested - 1 else null
 }
 
 data class PortfolioSummary(
@@ -232,9 +264,14 @@ data class PortfolioSummary(
     val lastImport: PortfolioImportRecord?,
     /** Latest price date used (dataset or broker snapshot). */
     val pricedAsOf: LocalDate?,
+    /** Value of the shares with a known cost (P&L is measured on these). */
+    val costedValue: Double = value,
 ) {
-    val pnl: Double get() = value - invested
-    val pnlPct: Double? get() = if (invested > 0) value / invested - 1 else null
+    val pnl: Double get() = costedValue - invested
+    val pnlPct: Double? get() = if (invested > 0) costedValue / invested - 1 else null
+    /** Value held in shares with no recorded cost (left out of P&L). */
+    val uncostedValue: Double get() = value - costedValue
+    val uncostedHoldings: Int get() = positions.count { it.uncostedQty > 0 }
     val trackedCount: Int get() = positions.count { it.tracked != null }
     fun broker(accountId: String): String = accounts.firstOrNull { it.id == accountId }?.broker ?: "?"
 }
@@ -245,9 +282,28 @@ data class ImportPreview(
     val exportedAt: String?,
     val included: List<IncludedAccount>,
     val skipped: List<SkippedAccount>,
+    /** Holdings workbook: what changes for each broker (empty for a backup file). */
+    val holdingsUpdates: List<HoldingsUpdate> = emptyList(),
 ) {
-    val canImport: Boolean get() = included.isNotEmpty()
+    val isHoldingsFile: Boolean get() = holdingsUpdates.isNotEmpty()
+    val canImport: Boolean get() = included.isNotEmpty() || holdingsUpdates.isNotEmpty()
 }
+
+/** One broker's changes from a holdings workbook, compared with what's stored. */
+data class HoldingsUpdate(
+    val broker: String,
+    val asOf: String?,
+    val holdings: Int,
+    /** Nothing was imported for this broker before. */
+    val newAccount: Boolean,
+    val withoutCost: Int,
+    val added: List<String>,
+    val removed: List<String>,
+    /** e.g. "TCS 10 → 12". */
+    val qtyChanged: List<String>,
+    /** e.g. "RELIANCE no cost → ₹607.21". */
+    val costChanged: List<String>,
+)
 
 data class IncludedAccount(
     val id: String,

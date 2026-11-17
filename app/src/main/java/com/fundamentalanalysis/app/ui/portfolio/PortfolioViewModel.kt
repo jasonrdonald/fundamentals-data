@@ -102,7 +102,8 @@ class PortfolioViewModel @Inject constructor(
                 val done = repository.confirmImport()
                 _import.value = ImportState.Idle
                 messages.send(
-                    "Imported ${done.included.joinToString { it.broker }}: ${done.included.sumOf { it.holdings }} holdings, ${done.included.sumOf { it.trades }} trades",
+                    if (done.isHoldingsFile) "Updated holdings for ${done.holdingsUpdates.joinToString { it.broker }}: ${done.holdingsUpdates.sumOf { it.holdings }} holdings"
+                    else "Imported ${done.included.joinToString { it.broker }}: ${done.included.sumOf { it.holdings }} holdings, ${done.included.sumOf { it.trades }} trades",
                 )
             } catch (e: CancellationException) {
                 throw e
