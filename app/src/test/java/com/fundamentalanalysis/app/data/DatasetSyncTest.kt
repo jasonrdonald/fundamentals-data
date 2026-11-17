@@ -14,6 +14,10 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 /** The progressive loader, run against the real bundled files. */
 class DatasetSyncTest {
@@ -23,6 +27,12 @@ class DatasetSyncTest {
     private val sync = DatasetSync(dao, remote, seed, DatasetFiles.json, Dispatchers.Unconfined, CoroutineScope(SupervisorJob()))
 
     private fun version(part: DataPart) = dao.partsRows.value[part.key]?.version
+
+    /** Versions in the bundled seed manifest (they change whenever the seed is refreshed). */
+    private val seedManifest = DatasetFiles.json.parseToJsonElement(java.io.File(DatasetFiles.seedDir, "manifest.json").readText()).jsonObject
+    private val seedVersion = seedManifest.getValue("version").jsonPrimitive.int
+    private fun seedPartVersion(part: DataPart) = seedManifest.getValue("parts").jsonArray
+        .first { it.jsonObject.getValue("name").jsonPrimitive.content == part.key }.jsonObject.getValue("version").jsonPrimitive.int
     private fun monthlyBars(symbol: String) = dao.series.value[symbol to MONTHLY]?.bars?.let(BarCodec::decode).orEmpty()
 
     @Test fun `first launch stores analytics and recent data only, once`() = runBlocking {
@@ -68,7 +78,7 @@ class DatasetSyncTest {
         sync.ensurePrimary()
         remote.manifestOverride = manifestWith(DatasetFiles.seedDir, emptyMap())
         // Same versions as stored, except history (not stored yet).
-        assertEquals(RefreshResult.Updated(1, listOf(DataPart.HISTORY)), sync.refresh(force = false))
+        assertEquals(RefreshResult.Updated(seedVersion, listOf(DataPart.HISTORY)), sync.refresh(force = false))
         assertNull(remote.reads["core.json"])
         assertEquals(1, remote.reads["history.json"])
         assertEquals(RefreshResult.UpToDate, sync.refresh(force = false))
@@ -84,7 +94,7 @@ class DatasetSyncTest {
         remote.manifestOverride = manifestWith(DatasetFiles.seedDir, mapOf("core" to 9), badSha = setOf("core"))
         val result = sync.refresh(force = true)
         assertTrue(result is RefreshResult.Failed && result.message.contains("checksum"))
-        assertEquals(1, version(DataPart.CORE))
+        assertEquals(seedPartVersion(DataPart.CORE), version(DataPart.CORE))
         assertFalse("latest event should be the failure", dao.events.value.maxBy { it.id }.success)
     }
 
@@ -92,14 +102,14 @@ class DatasetSyncTest {
         sync.ensurePrimary()
         remote.manifestOverride = manifestWith(DatasetFiles.seedDir, mapOf("core" to 9), schema = 5)
         assertTrue(sync.refresh(force = true) is RefreshResult.Failed)
-        assertEquals(1, version(DataPart.CORE))
+        assertEquals(seedPartVersion(DataPart.CORE), version(DataPart.CORE))
     }
 
     @Test fun `network failure keeps cached data`() = runBlocking {
         sync.ensurePrimary()
         remote.error = java.io.IOException("offline")
         assertTrue(sync.refresh(force = true) is RefreshResult.Failed)
-        assertEquals(1, version(DataPart.CORE))
+        assertEquals(seedPartVersion(DataPart.CORE), version(DataPart.CORE))
     }
 
     @Test fun `no remote source configured`() = runBlocking {
@@ -121,7 +131,7 @@ class DatasetSyncTest {
         remote.manifestOverride = manifestWith(DatasetFiles.seedDir, mapOf("core" to 30, "analytics" to 30))
         sync.refresh(force = true)
         sync.resetToBundled()
-        assertEquals(1, version(DataPart.CORE))
+        assertEquals(seedPartVersion(DataPart.CORE), version(DataPart.CORE))
         assertEquals(setOf("analytics", "core", "history"), dao.partsRows.value.keys)
     }
 }
