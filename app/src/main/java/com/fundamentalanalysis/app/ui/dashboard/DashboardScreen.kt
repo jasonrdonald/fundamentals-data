@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.ui.Alignment
@@ -65,6 +66,7 @@ fun DashboardScreen(
     onOpenIndex: (String) -> Unit,
     onOpenData: () -> Unit,
     onOpenPortfolio: () -> Unit,
+    onOpenHeatmap: () -> Unit,
     viewModel: DashboardViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -76,6 +78,7 @@ fun DashboardScreen(
         snackbarHostState = snackbar,
         actions = {
             ThemeAction()
+            IconButton(onClick = onOpenHeatmap) { Icon(Icons.Filled.GridView, contentDescription = "Heatmap") }
             IconButton(onClick = onOpenData) { Icon(Icons.Filled.Storage, contentDescription = "Data management") }
             IconButton(onClick = viewModel::refresh) { Icon(Icons.Filled.Refresh, contentDescription = "Refresh data") }
         },

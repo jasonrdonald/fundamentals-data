@@ -11,3 +11,4 @@ import kotlinx.serialization.Serializable
 @Serializable data class StockDetailRoute(val symbol: String)
 @Serializable data object DataRoute
 @Serializable data object PortfolioRoute
+@Serializable data object HeatmapRoute

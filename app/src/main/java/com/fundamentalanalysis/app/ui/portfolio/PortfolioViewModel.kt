@@ -23,7 +23,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-enum class PortfolioTab(val label: String) { HOLDINGS("Holdings"), ALLOCATION("Allocation"), VS_INDEX("vs Index"), ACTIVITY("Activity") }
+enum class PortfolioTab(val label: String) { HOLDINGS("Holdings"), HEATMAP("Heatmap"), ALLOCATION("Allocation"), VS_INDEX("vs Index"), ACTIVITY("Activity") }
 
 enum class HoldingSort(val label: String) { VALUE("Value"), PNL("P&L %"), DAY("Today"), NAME("Name") }
 

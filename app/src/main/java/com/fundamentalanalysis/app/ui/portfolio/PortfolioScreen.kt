@@ -215,6 +215,7 @@ private fun PortfolioContent(state: PortfolioUiState, vm: PortfolioViewModel, on
                     }
                 }
             }
+            PortfolioTab.HEATMAP -> item { PortfolioHeatmap(summary, onOpenStock) }
             PortfolioTab.ALLOCATION -> item { AllocationCards(summary) }
             PortfolioTab.VS_INDEX -> item { VsIndexCards(summary, onOpenStock) }
             PortfolioTab.ACTIVITY -> item { ActivityCards(summary) }

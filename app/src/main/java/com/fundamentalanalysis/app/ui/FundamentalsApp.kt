@@ -33,6 +33,8 @@ import com.fundamentalanalysis.app.ui.navigation.CompareRoute
 import com.fundamentalanalysis.app.ui.navigation.DashboardRoute
 import com.fundamentalanalysis.app.ui.navigation.DataRoute
 import com.fundamentalanalysis.app.ui.navigation.PortfolioRoute
+import com.fundamentalanalysis.app.ui.navigation.HeatmapRoute
+import com.fundamentalanalysis.app.ui.heatmap.HeatmapScreen
 import com.fundamentalanalysis.app.ui.portfolio.PortfolioScreen
 import com.fundamentalanalysis.app.ui.data.DataScreen
 import com.fundamentalanalysis.app.ui.navigation.ReportsRoute
@@ -61,6 +63,7 @@ fun FundamentalsApp() {
     val currentDestination = backStackEntry?.destination
     val openIndex: (String) -> Unit = { navController.navigate(IndexDetailRoute(it)) }
     val openStock: (String) -> Unit = { navController.navigate(StockDetailRoute(it)) }
+    val openHeatmap: () -> Unit = { navController.navigate(HeatmapRoute) { launchSingleTop = true } }
 
     Scaffold(
         // Top bars live in each screen; NavigationBar pads itself for the system nav bar.
@@ -95,14 +98,16 @@ fun FundamentalsApp() {
                     onOpenIndex = openIndex,
                     onOpenData = { navController.navigate(DataRoute) },
                     onOpenPortfolio = { navController.navigate(PortfolioRoute) },
+                    onOpenHeatmap = openHeatmap,
                 )
             }
             composable<PortfolioRoute> { PortfolioScreen(onBack = { navController.popBackStack() }, onOpenStock = openStock) }
+            composable<HeatmapRoute> { HeatmapScreen(onBack = { navController.popBackStack() }, onOpenStock = openStock) }
             composable<DataRoute> { DataScreen(onBack = { navController.popBackStack() }) }
             composable<IndicesRoute> { IndicesScreen(onOpenIndex = openIndex) }
             composable<CompareRoute> { CompareScreen(onOpenIndex = openIndex) }
             composable<ReportsRoute> { ReportsScreen(onOpenIndex = openIndex) }
-            composable<StocksRoute> { StocksScreen(onOpenStock = openStock) }
+            composable<StocksRoute> { StocksScreen(onOpenStock = openStock, onOpenHeatmap = openHeatmap) }
             composable<StockDetailRoute> { StockDetailScreen(onBack = { navController.popBackStack() }) }
             composable<IndexDetailRoute> { IndexDetailScreen(onBack = { navController.popBackStack() }) }
         }

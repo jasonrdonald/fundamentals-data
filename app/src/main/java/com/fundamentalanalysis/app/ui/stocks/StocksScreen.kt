@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -51,6 +52,7 @@ import com.fundamentalanalysis.app.ui.components.shareCsv
 @Composable
 fun StocksScreen(
     onOpenStock: (String) -> Unit,
+    onOpenHeatmap: () -> Unit = {},
     viewModel: StocksViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -61,6 +63,7 @@ fun StocksScreen(
     ScreenScaffold(
         title = "Stocks",
         actions = {
+            IconButton(onClick = onOpenHeatmap) { Icon(Icons.Filled.GridView, contentDescription = "Heatmap") }
             if (sel.tab != StocksTab.ALL) {
                 IconButton(onClick = {
                     if (sel.tab == StocksTab.SECTORS) {
