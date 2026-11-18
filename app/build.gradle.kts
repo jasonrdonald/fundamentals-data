@@ -17,8 +17,8 @@ android {
         applicationId = "com.fundamentalanalysis.app"
         minSdk = 26
         targetSdk = 37
-        versionCode = 6
-        versionName = "1.4.0"
+        versionCode = 7
+        versionName = "1.5.0"
 
         // Manifest of the shared dataset (schema 4); parts are fetched relative to it.
         val manifestUrl = providers.gradleProperty("dataset.manifestUrl").getOrElse("")
