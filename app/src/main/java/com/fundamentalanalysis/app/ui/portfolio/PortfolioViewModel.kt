@@ -35,6 +35,12 @@ data class PortfolioUiState(
     val tab: PortfolioTab = PortfolioTab.HOLDINGS,
     val sort: HoldingSort = HoldingSort.VALUE,
     val holdings: List<Position> = emptyList(),
+    /** Broad-market indices the tracked holdings can be compared with (symbol to name). */
+    val benchmarks: List<Pair<String, String>> = emptyList(),
+    /** Chosen benchmark for "All tracked holdings"; null = each stock's own index. */
+    val benchmark: String? = null,
+    /** "All tracked holdings" vs [benchmark] (null when comparing with own index). */
+    val vsBenchmark: List<com.fundamentalanalysis.app.domain.model.IndexComparison>? = null,
     /** Holdings by index, each group sorted by [sort]. */
     val groups: List<com.fundamentalanalysis.app.domain.model.GroupSummary> = emptyList(),
 )
@@ -51,21 +57,31 @@ sealed interface ImportState {
 @HiltViewModel
 class PortfolioViewModel @Inject constructor(
     observePortfolio: ObservePortfolioUseCase,
+    observeIndices: com.fundamentalanalysis.app.domain.usecase.ObserveAnalyzedIndicesUseCase,
     private val repository: PortfolioRepository,
     private val savedState: SavedStateHandle,
 ) : ViewModel() {
     private val broker = savedState.getStateFlow<String?>(KEY_BROKER, null)
     private val tab = savedState.getStateFlow(KEY_TAB, PortfolioTab.HOLDINGS)
     private val sort = savedState.getStateFlow(KEY_SORT, HoldingSort.VALUE)
+    private val benchmark = savedState.getStateFlow<String?>(KEY_BENCHMARK, null)
     private val _import = MutableStateFlow<ImportState>(ImportState.Idle)
     val import: StateFlow<ImportState> = _import.asStateFlow()
     private val messages = Channel<String>(Channel.BUFFERED)
     val events = messages.receiveAsFlow()
 
     val state: StateFlow<PortfolioUiState> = combine(
-        observePortfolio(broker), observePortfolio.brokers(), broker, tab, sort,
-    ) { summary, brokers, b, t, s ->
+        combine(observePortfolio(broker), observePortfolio.brokers(), broker, tab, sort, ::Inputs),
+        observeIndices(), benchmark,
+    ) { (summary, brokers, b, t, s), indices, chosen ->
+        val choices = indices.filter { it.index.category == com.fundamentalanalysis.app.domain.model.IndexCategory.BROAD }
+            .sortedBy { BENCHMARK_ORDER.indexOf(it.symbol).let { i -> if (i < 0) Int.MAX_VALUE else i } }
+        val picked = choices.firstOrNull { it.symbol == chosen }
         PortfolioUiState(
+            benchmarks = choices.map { it.symbol to it.index.name },
+            benchmark = picked?.symbol,
+            vsBenchmark = if (picked == null || summary == null) null else
+                com.fundamentalanalysis.app.domain.analysis.PortfolioAnalytics.compareWith(summary.positions.filter { it.tracked != null }, picked.analytics.returns),
             loading = false,
             summary = summary,
             brokers = brokers,
@@ -80,6 +96,8 @@ class PortfolioViewModel @Inject constructor(
     fun onBroker(value: String?) { savedState[KEY_BROKER] = value }
     fun onTab(value: PortfolioTab) { savedState[KEY_TAB] = value }
     fun onSort(value: HoldingSort) { savedState[KEY_SORT] = value }
+    /** null = each stock's own index. */
+    fun onBenchmark(symbol: String?) { savedState[KEY_BENCHMARK] = symbol }
 
     /** A file was picked: parse it and show what would be imported. */
     fun onFilePicked(uri: String) {
@@ -130,8 +148,18 @@ class PortfolioViewModel @Inject constructor(
         const val KEY_BROKER = "portfolio_broker"
         const val KEY_TAB = "portfolio_tab"
         const val KEY_SORT = "portfolio_sort"
+        const val KEY_BENCHMARK = "portfolio_benchmark"
+        val BENCHMARK_ORDER = listOf("NIFTY 50", "NIFTY NEXT 50", "NIFTY MIDCAP 150", "NIFTY 500")
     }
 }
+
+private data class Inputs(
+    val summary: com.fundamentalanalysis.app.domain.model.PortfolioSummary?,
+    val brokers: List<String>,
+    val broker: String?,
+    val tab: PortfolioTab,
+    val sort: HoldingSort,
+)
 
 private fun List<Position>.sortedBy(sort: HoldingSort): List<Position> = when (sort) {
     HoldingSort.VALUE -> sortedByDescending { it.value }

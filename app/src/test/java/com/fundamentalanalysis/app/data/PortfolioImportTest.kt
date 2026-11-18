@@ -165,6 +165,19 @@ class PortfolioImportTest {
         assertEquals("Metals & Mining", PortfolioAnalytics.normalizeSector("Metals & Mining"))
     }
 
+    @Test fun `tracked holdings can be compared with a chosen index`() {
+        val tracked = PortfolioAnalytics.summarize(data(), tracked()).positions.filter { it.tracked != null }
+        // ALPHA: +30% over 1Y, -5% over 1M. Chosen index: +40% 1Y, -10% 1M, no 3M figure.
+        val rows = PortfolioAnalytics.compareWith(tracked, mapOf(Period.Y1 to 0.40, Period.M1 to -0.10, Period.M3 to null))
+        val y1 = rows.single { it.period == Period.Y1 }
+        assertEquals(0, y1.beat); assertEquals(1, y1.measured); assertEquals(0.40, y1.indexReturn!!, 1e-12)
+        assertEquals(0.30, y1.weightedReturn!!, 1e-12)
+        val m1 = rows.single { it.period == Period.M1 }
+        assertEquals(1, m1.beat)
+        val m3 = rows.single { it.period == Period.M3 }
+        assertEquals(0, m3.measured); assertEquals(null, m3.indexReturn)
+    }
+
     @Test fun `holdings are grouped by index with per-index comparison`() {
         val s = PortfolioAnalytics.summarize(data(), tracked())
         assertEquals(

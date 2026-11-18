@@ -146,6 +146,24 @@ object PortfolioAnalytics {
     }
 
     /**
+     * How many tracked [positions] beat one chosen index per period (instead of each stock's own
+     * index), with their value-weighted return and the index's return. [indexReturns] are the
+     * chosen index's returns, as shown on its index page.
+     */
+    fun compareWith(positions: List<Position>, indexReturns: Map<Period, Double?>): List<IndexComparison> = COMPARE_PERIODS.map { period ->
+        val measured = positions.mapNotNull { p -> p.tracked?.metrics?.returns?.get(period)?.let { p to it } }
+        val weight = measured.sumOf { it.first.value }
+        val index = indexReturns[period]
+        IndexComparison(
+            period = period,
+            measured = if (index == null) 0 else measured.size,
+            beat = if (index == null) 0 else measured.count { (_, r) -> r > index },
+            weightedReturn = if (weight > 0) measured.sumOf { (p, r) -> p.value * r } / weight else null,
+            indexReturn = index,
+        )
+    }
+
+    /**
      * Compares each holding with [benchmark] over the time since it was bought. The purchase date
      * is the value-weighted average of the holding's buy trades (and priced allotments, e.g.
      * IPOs) across the brokers that hold it; the benchmark's close on that date comes from daily

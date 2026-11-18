@@ -219,7 +219,7 @@ private fun PortfolioContent(state: PortfolioUiState, vm: PortfolioViewModel, on
             }
             PortfolioTab.HEATMAP -> item { PortfolioHeatmap(summary, onOpenStock) }
             PortfolioTab.ALLOCATION -> item { AllocationCards(summary) }
-            PortfolioTab.VS_INDEX -> item { VsIndexCards(summary, onOpenStock) }
+            PortfolioTab.VS_INDEX -> item { VsIndexCards(summary, onOpenStock, state, vm::onBenchmark) }
             PortfolioTab.ACTIVITY -> item { ActivityCards(summary) }
         }
         item { Column(Modifier.padding(horizontal = 16.dp)) { PrivacyNote() } }
@@ -342,15 +342,25 @@ private fun AllocationCards(s: PortfolioSummary) {
 }
 
 @Composable
-private fun VsIndexCards(s: PortfolioSummary, onOpenStock: (String) -> Unit) {
+private fun VsIndexCards(s: PortfolioSummary, onOpenStock: (String) -> Unit, state: PortfolioUiState, onBenchmark: (String?) -> Unit) {
     val tracked = s.groups.filter { it.group.tracked }
     val untracked = s.groups.filterNot { it.group.tracked }
     Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        val chosenName = state.benchmarks.firstOrNull { it.first == state.benchmark }?.second
         SectionCard(
             "All tracked holdings",
-            subtitle = "${s.trackedCount} of ${s.positions.size} holdings are Nifty 50, Next 50 or Midcap 150 stocks; each is compared with its own index",
+            subtitle = "${s.trackedCount} of ${s.positions.size} holdings are Nifty 50, Next 50 or Midcap 150 stocks; " +
+                if (chosenName == null) "each is compared with its own index" else "all are compared with the $chosenName",
         ) {
-            ComparisonTable(s.vsIndex, showIndex = false)
+            Text("Compare with", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)) {
+                item { FilterChip(state.benchmark == null, onClick = { onBenchmark(null) }, label = { Text("Own index") }) }
+                items(state.benchmarks, key = { it.first }) { (symbol, name) ->
+                    FilterChip(state.benchmark == symbol, onClick = { onBenchmark(symbol) }, label = { Text(name) })
+                }
+            }
+            val chosen = state.vsBenchmark
+            if (chosen == null) ComparisonTable(s.vsIndex, showIndex = false) else ComparisonTable(chosen, showIndex = true)
             Text(
                 "Weighted by today's value; price returns over the period, ignoring when you bought.",
                 style = MaterialTheme.typography.labelSmall,
