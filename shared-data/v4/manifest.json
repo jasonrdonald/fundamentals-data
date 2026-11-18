@@ -1,9 +1,9 @@
 {
  "schemaVersion": 4,
- "version": 4,
- "datasetVersion": 10,
- "asOf": "2026-11-17",
- "generatedAt": "2026-11-18T04:02:17Z",
+ "version": 5,
+ "datasetVersion": 11,
+ "asOf": "2026-11-18",
+ "generatedAt": "2026-11-18T15:53:26Z",
  "loadOrder": [
   "analytics",
   "core",
@@ -13,32 +13,46 @@
   {
    "name": "analytics",
    "file": "analytics.json",
-   "version": 4,
-   "bytes": 251325,
-   "sha256": "47f733b2290903037c4a3fbe2ae4b13ede6e79a1578a876639f8c861e080d984",
+   "version": 5,
+   "bytes": 251691,
+   "sha256": "1ab6059708706f0ed094c4c6ce28881a102847b3ba99ae9840c619fdd2a5d164",
    "records": 609,
    "description": "Precomputed metrics, sector aggregates and calendar tables"
   },
   {
    "name": "core",
    "file": "core.json",
-   "version": 3,
-   "bytes": 414340,
-   "sha256": "1f042ede0f01b76c1ce0ef4d5287eae16fbbb8daf1d328391bf3ea12068c5262",
+   "version": 5,
+   "bytes": 414381,
+   "sha256": "1506b5630abb7e575289a0b6d6c9056e51010040bd983854dee6a7658f0259c3",
    "records": 9447,
    "description": "Latest 300 index sessions, last 13 months, constituents and stock list"
   },
   {
    "name": "history",
    "file": "history.json",
-   "version": 3,
-   "bytes": 982100,
-   "sha256": "dbedc8e43f0faf30eaada5d9ebbef1b3331af708d6ff4222038f5a91293b649e",
+   "version": 5,
+   "bytes": 982104,
+   "sha256": "c94889c497db8ff7bde0f1fac4c868fc24f66552fbd48918fdf55ad8e1fb5d3e",
    "records": 99239,
    "description": "Full monthly history, valuation history, stock daily closes and financials"
   }
  ],
  "history": [
+  {
+   "version": 5,
+   "datasetVersion": 11,
+   "generatedAt": "2026-11-18T15:53:26Z",
+   "asOf": "2026-11-18",
+   "changed": [
+    "analytics",
+    "core",
+    "history"
+   ],
+   "failures": [],
+   "indices": 19,
+   "stocks": 250
+  },
   {
    "version": 4,
    "datasetVersion": 10,
