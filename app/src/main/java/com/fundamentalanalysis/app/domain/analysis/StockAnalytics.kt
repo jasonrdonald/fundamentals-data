@@ -16,7 +16,7 @@ import java.util.Locale
 import kotlin.math.pow
 
 /** Periods used to compare stocks with the Nifty 50. */
-val STOCK_PERIODS = listOf(Period.M1, Period.M3, Period.M6, Period.YTD, Period.Y1, Period.Y3)
+val STOCK_PERIODS = listOf(Period.W1, Period.M1, Period.M3, Period.M6, Period.YTD, Period.Y1, Period.Y3)
 
 object StockAnalyticsCalculator {
 

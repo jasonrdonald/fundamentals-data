@@ -45,7 +45,7 @@ TRADING_DAYS = 252
 
 # Same names as the app's Period enum.
 INDEX_PERIODS = {"D1": 1, "W1": 5, "M1": 21, "M3": 63, "M6": 126, "YTD": None, "Y1": 252, "Y3": None, "Y5": None}
-STOCK_PERIODS = ["M1", "M3", "M6", "YTD", "Y1", "Y3"]
+STOCK_PERIODS = ["W1", "M1", "M3", "M6", "YTD", "Y1", "Y3"]
 PART_ORDER = ["analytics", "core", "history"]
 PART_INFO = {
     "analytics": "Precomputed metrics, sector aggregates and calendar tables",

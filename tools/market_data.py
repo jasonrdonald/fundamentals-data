@@ -22,7 +22,7 @@ DEFAULT_DIR = ROOT / "shared-data" / "v4"
 #: Universes with constituent stocks, in display order.
 UNIVERSES = ["NIFTY 50", "NIFTY NEXT 50", "NIFTY MIDCAP 150"]
 INDEX_PERIODS = ["D1", "W1", "M1", "M3", "M6", "YTD", "Y1", "Y3", "Y5"]
-STOCK_PERIODS = ["M1", "M3", "M6", "YTD", "Y1", "Y3"]
+STOCK_PERIODS = ["W1", "M1", "M3", "M6", "YTD", "Y1", "Y3"]
 PERIOD_LABELS = {"D1": "1D", "W1": "1W", "M1": "1M", "M3": "3M", "M6": "6M", "YTD": "YTD",
                  "Y1": "1Y", "Y3": "3Y CAGR", "Y5": "5Y CAGR"}
 
