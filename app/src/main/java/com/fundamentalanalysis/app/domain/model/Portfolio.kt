@@ -319,3 +319,49 @@ data class IncludedAccount(
 )
 
 data class SkippedAccount(val broker: String, val reason: String)
+
+/** Return window for the portfolio's holdings: a market price return, or since purchase (on cost). */
+enum class ReturnPeriod(val label: String, val period: Period?) {
+    D1("1D", Period.D1),
+    D5("5D", Period.W1),
+    M1("1M", Period.M1),
+    M6("6M", Period.M6),
+    Y1("1Y", Period.Y1),
+    ALL("All time", null),
+}
+
+/** Combined return of some holdings over a [ReturnPeriod]. [measured] of [total] holdings had one. */
+data class PeriodReturn(val gain: Double, val pct: Double?, val measured: Int, val total: Int)
+
+/**
+ * This holding's return over [rp]: P&L on cost for ALL, otherwise the stock's price return over
+ * the window (tracked stocks only; the app has no price history for the others).
+ */
+fun Position.periodReturn(rp: ReturnPeriod): Double? = when (rp) {
+    ReturnPeriod.ALL -> pnlPct
+    ReturnPeriod.D1 -> tracked?.metrics?.change1d
+    else -> tracked?.metrics?.returns?.get(rp.period)
+}
+
+/** The same in rupees: P&L on cost, or what the current holding gained over the window. */
+fun Position.periodGain(rp: ReturnPeriod): Double? = when (rp) {
+    ReturnPeriod.ALL -> if (costKnown) pnl else null
+    else -> periodReturn(rp)?.takeIf { it > -1 }?.let { r -> value * r / (1 + r) }
+}
+
+/**
+ * Combined return of [this] holdings over [rp]. For ALL it's P&L on cost (shares with a known
+ * cost). For a window it's the gain of today's holdings over it, divided by their value at its
+ * start, so big and small holdings weigh in by size.
+ */
+fun List<Position>.periodReturn(rp: ReturnPeriod): PeriodReturn {
+    if (rp == ReturnPeriod.ALL) {
+        val invested = sumOf { it.invested }
+        val costed = sumOf { it.costedValue }
+        return PeriodReturn(costed - invested, if (invested > 0) costed / invested - 1 else null, count { it.costKnown }, size)
+    }
+    val measured = mapNotNull { p -> p.periodReturn(rp)?.takeIf { it > -1 }?.let { p to it } }
+    val gain = measured.sumOf { (p, r) -> p.value * r / (1 + r) }
+    val start = measured.sumOf { (p, r) -> p.value / (1 + r) }
+    return PeriodReturn(gain, if (start > 0) gain / start else null, measured.size, size)
+}

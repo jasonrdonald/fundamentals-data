@@ -1,5 +1,10 @@
 package com.fundamentalanalysis.app.ui.portfolio
 
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Visibility
+import com.fundamentalanalysis.app.domain.model.periodGain
+import com.fundamentalanalysis.app.domain.model.periodReturn
+import com.fundamentalanalysis.app.domain.model.ReturnPeriod
 import com.fundamentalanalysis.app.data.portfolio.HoldingsReconciler
 import com.fundamentalanalysis.app.domain.model.CostSource
 import com.fundamentalanalysis.app.domain.model.IndexGroup
@@ -100,6 +105,14 @@ fun PortfolioScreen(
         snackbarHostState = snackbar,
         navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
         actions = {
+            if (state.summary != null) {
+                IconButton(onClick = viewModel::onToggleDetails) {
+                    Icon(
+                        if (state.showDetails) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                        contentDescription = if (state.showDetails) "Hide quantities and costs" else "Show quantities and costs",
+                    )
+                }
+            }
             IconButton(onClick = pick) { Icon(Icons.Filled.FileOpen, contentDescription = "Import portfolio") }
             if (state.summary != null) {
                 IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Filled.DeleteOutline, contentDescription = "Delete imported portfolio") }
@@ -185,7 +198,13 @@ private fun PortfolioContent(state: PortfolioUiState, vm: PortfolioViewModel, on
             item { Text("Nothing imported for this broker.", Modifier.padding(16.dp)) }
             return@LazyColumn
         }
-        item { SummaryCard(summary, Modifier.padding(horizontal = 16.dp)) }
+        item {
+            // Return window for the whole page: summary, index groups and holdings.
+            LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(ReturnPeriod.entries) { rp -> FilterChip(state.period == rp, onClick = { vm.onPeriod(rp) }, label = { Text(rp.label) }) }
+            }
+        }
+        item { SummaryCard(summary, state.period, Modifier.padding(horizontal = 16.dp)) }
         item {
             SecondaryScrollableTabRow(selectedTabIndex = PortfolioTab.entries.indexOf(state.tab), edgePadding = 16.dp) {
                 PortfolioTab.entries.forEach { t ->
@@ -197,7 +216,9 @@ private fun PortfolioContent(state: PortfolioUiState, vm: PortfolioViewModel, on
             PortfolioTab.HOLDINGS -> {
                 item {
                     LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(HoldingSort.entries) { s -> FilterChip(state.sort == s, onClick = { vm.onSort(s) }, label = { Text(s.label) }) }
+                        items(HoldingSort.entries) { s ->
+                            FilterChip(state.sort == s, onClick = { vm.onSort(s) }, label = { Text(if (s == HoldingSort.RETURN) "${state.period.label} return" else s.label) })
+                        }
                     }
                 }
                 item {
@@ -209,10 +230,10 @@ private fun PortfolioContent(state: PortfolioUiState, vm: PortfolioViewModel, on
                     )
                 }
                 items(state.groups, key = { it.group.name }) { g ->
-                    GroupCard(g, Modifier.padding(horizontal = 16.dp)) {
+                    GroupCard(g, Modifier.padding(horizontal = 16.dp), period = state.period) {
                         g.positions.forEachIndexed { i, p ->
                             if (i > 0) HorizontalDivider()
-                            HoldingRow(p, onOpenStock)
+                            HoldingRow(p, state.period, state.showDetails, onOpenStock)
                         }
                     }
                 }
@@ -227,10 +248,23 @@ private fun PortfolioContent(state: PortfolioUiState, vm: PortfolioViewModel, on
 }
 
 @Composable
-private fun SummaryCard(s: PortfolioSummary, modifier: Modifier) {
+private fun SummaryCard(s: PortfolioSummary, period: ReturnPeriod, modifier: Modifier) {
     SectionCard("Current value", modifier, subtitle = s.accounts.joinToString(" · ") { "${it.broker} ${it.clientId}" }) {
         Text(Fmt.inr(s.value), style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.SemiBold)
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        if (period != ReturnPeriod.ALL) {
+            val r = s.positions.periodReturn(period)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ChangeText("${Fmt.inr(r.gain, signed = true)} (${Fmt.signedPercent(r.pct)})", r.gain, style = MaterialTheme.typography.titleMedium)
+                Text("  ${period.label}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Text(
+                "Price change of today's holdings over ${period.label}, for the ${r.measured} of ${r.total} holdings with market data " +
+                    "(Nifty 50, Next 50 and Midcap 150 stocks)",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (period == ReturnPeriod.ALL) Row(verticalAlignment = Alignment.CenterVertically) {
             ChangeText("${Fmt.inr(s.pnl, signed = true)} (${Fmt.signedPercent(s.pnlPct)})", s.pnl, style = MaterialTheme.typography.titleMedium)
             Text(
                 if (s.uncostedValue > 1) "  on holdings with a known cost" else "  overall",
@@ -258,7 +292,7 @@ private fun SummaryCard(s: PortfolioSummary, modifier: Modifier) {
 }
 
 @Composable
-private fun HoldingRow(p: Position, onOpenStock: (String) -> Unit) {
+private fun HoldingRow(p: Position, period: ReturnPeriod, showDetails: Boolean, onOpenStock: (String) -> Unit) {
     val tracked = p.tracked
     Column(
         Modifier.fillMaxWidth()
@@ -277,14 +311,19 @@ private fun HoldingRow(p: Position, onOpenStock: (String) -> Unit) {
             }
             Column(horizontalAlignment = Alignment.End) {
                 Text(Fmt.inr(p.value), style = MaterialTheme.typography.titleSmall)
-                if (p.costKnown) {
-                    ChangeText("${Fmt.signedPercent(p.pnlPct)} · ${Fmt.inr(p.pnl, signed = true)}", p.pnl, style = MaterialTheme.typography.bodySmall)
+                val r = p.periodReturn(period)
+                val gain = p.periodGain(period)
+                if (r != null && gain != null) {
+                    ChangeText("${Fmt.signedPercent(r)} · ${Fmt.inr(gain, signed = true)}", gain, style = MaterialTheme.typography.bodySmall)
                 } else {
-                    Text("P&L —", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        if (period == ReturnPeriod.ALL) "P&L —" else "${period.label} —",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         }
-        Text(
+        if (showDetails) Text(
             "${Fmt.qty(p.qty)} × ${Fmt.rupees(p.price)} · ${costText(p)}" +
                 (tracked?.metrics?.change1d?.let { " · today ${Fmt.signedPercent(it)}" } ?: "") +
                 " · " + p.lots.joinToString { if (p.lots.size > 1) "${it.broker} ${Fmt.qty(it.qty)}" else it.broker } +
@@ -516,7 +555,7 @@ private fun ComparisonTable(rows: List<IndexComparison>, showIndex: Boolean) {
 
 /** A card for one index's holdings: summary header (tap to fold) and [content]. */
 @Composable
-private fun GroupCard(g: GroupSummary, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+private fun GroupCard(g: GroupSummary, modifier: Modifier = Modifier, period: ReturnPeriod = ReturnPeriod.ALL, content: @Composable ColumnScope.() -> Unit) {
     var open by rememberSaveable(g.group) { mutableStateOf(true) }
     ElevatedCard(modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
@@ -528,7 +567,19 @@ private fun GroupCard(g: GroupSummary, modifier: Modifier = Modifier, content: @
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Row {
+                    if (period != ReturnPeriod.ALL) {
+                        val r = g.positions.periodReturn(period)
+                        if (r.pct == null) {
+                            Text("${period.label} —", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            ChangeText(
+                                "${period.label} ${Fmt.signedPercent(r.pct)} (${Fmt.inr(r.gain, signed = true)})" +
+                                    if (r.measured < r.total) " · ${r.measured} of ${r.total}" else "",
+                                r.gain, style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+                    if (period == ReturnPeriod.ALL) Row {
                         ChangeText("P&L ${Fmt.signedPercent(g.pnlPct)} (${Fmt.inr(g.pnl, signed = true)})", g.pnl, style = MaterialTheme.typography.bodySmall)
                         g.dayChange?.let {
                             Text(" · ", style = MaterialTheme.typography.bodySmall)

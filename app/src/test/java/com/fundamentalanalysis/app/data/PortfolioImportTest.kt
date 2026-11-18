@@ -1,5 +1,8 @@
 package com.fundamentalanalysis.app.data
 
+import com.fundamentalanalysis.app.domain.model.periodGain
+import com.fundamentalanalysis.app.domain.model.periodReturn
+import com.fundamentalanalysis.app.domain.model.ReturnPeriod
 import com.fundamentalanalysis.app.data.portfolio.PortfolioBackupParser
 import com.fundamentalanalysis.app.data.portfolio.UnsupportedBackupException
 import com.fundamentalanalysis.app.data.portfolio.toRows
@@ -163,6 +166,27 @@ class PortfolioImportTest {
         assertEquals("IT - Software", PortfolioAnalytics.normalizeSector("IT - SOFTWARE"))
         assertEquals("Oil and Gas", PortfolioAnalytics.normalizeSector("OIL AND GAS"))
         assertEquals("Metals & Mining", PortfolioAnalytics.normalizeSector("Metals & Mining"))
+    }
+
+    @Test fun `period returns use market returns, all time uses cost`() {
+        val s = PortfolioAnalytics.summarize(data(), tracked())
+        val alpha = s.positions.single { it.symbol == "ALPHA" }
+        val beta = s.positions.single { it.symbol == "BETA" }
+        // ALPHA: +2% today, -5% over 1M, +30% over 1Y; BETA isn't tracked, so it has no market return.
+        assertEquals(0.02, alpha.periodReturn(ReturnPeriod.D1)!!, 1e-12)
+        assertEquals(-0.05, alpha.periodReturn(ReturnPeriod.M1)!!, 1e-12)
+        assertEquals(null, alpha.periodReturn(ReturnPeriod.D5))
+        assertEquals(null, beta.periodReturn(ReturnPeriod.M1))
+        assertEquals(alpha.pnlPct!!, alpha.periodReturn(ReturnPeriod.ALL)!!, 1e-12)
+        assertEquals(alpha.value * 0.30 / 1.30, alpha.periodGain(ReturnPeriod.Y1)!!, 1e-9)
+
+        val y1 = s.positions.periodReturn(ReturnPeriod.Y1)
+        assertEquals(1, y1.measured)
+        assertEquals(s.positions.size, y1.total)
+        assertEquals(0.30, y1.pct!!, 1e-12)
+        val all = s.positions.periodReturn(ReturnPeriod.ALL)
+        assertEquals(s.pnl, all.gain, 1e-9)
+        assertEquals(s.pnlPct!!, all.pct!!, 1e-12)
     }
 
     @Test fun `tracked holdings can be compared with a chosen index`() {

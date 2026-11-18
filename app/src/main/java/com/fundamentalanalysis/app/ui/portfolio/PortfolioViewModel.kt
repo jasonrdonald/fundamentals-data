@@ -1,5 +1,6 @@
 package com.fundamentalanalysis.app.ui.portfolio
 
+import com.fundamentalanalysis.app.domain.model.periodReturn
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -25,7 +26,8 @@ import javax.inject.Inject
 
 enum class PortfolioTab(val label: String) { HOLDINGS("Holdings"), HEATMAP("Heatmap"), ALLOCATION("Allocation"), VS_INDEX("vs Index"), ACTIVITY("Activity") }
 
-enum class HoldingSort(val label: String) { VALUE("Value"), PNL("P&L %"), DAY("Today"), NAME("Name") }
+/** RETURN sorts by the selected [ReturnPeriod]. */
+enum class HoldingSort(val label: String) { VALUE("Value"), RETURN("Return"), NAME("Name") }
 
 data class PortfolioUiState(
     val loading: Boolean = true,
@@ -34,6 +36,10 @@ data class PortfolioUiState(
     val broker: String? = null,
     val tab: PortfolioTab = PortfolioTab.HOLDINGS,
     val sort: HoldingSort = HoldingSort.VALUE,
+    /** Return window shown across the page (summary, index groups, holdings). */
+    val period: com.fundamentalanalysis.app.domain.model.ReturnPeriod = com.fundamentalanalysis.app.domain.model.ReturnPeriod.ALL,
+    /** Show quantities, prices and average costs on holding rows. */
+    val showDetails: Boolean = false,
     val holdings: List<Position> = emptyList(),
     /** Broad-market indices the tracked holdings can be compared with (symbol to name). */
     val benchmarks: List<Pair<String, String>> = emptyList(),
@@ -65,6 +71,8 @@ class PortfolioViewModel @Inject constructor(
     private val tab = savedState.getStateFlow(KEY_TAB, PortfolioTab.HOLDINGS)
     private val sort = savedState.getStateFlow(KEY_SORT, HoldingSort.VALUE)
     private val benchmark = savedState.getStateFlow<String?>(KEY_BENCHMARK, null)
+    private val period = savedState.getStateFlow(KEY_PERIOD, com.fundamentalanalysis.app.domain.model.ReturnPeriod.ALL)
+    private val details = savedState.getStateFlow(KEY_DETAILS, false)
     private val _import = MutableStateFlow<ImportState>(ImportState.Idle)
     val import: StateFlow<ImportState> = _import.asStateFlow()
     private val messages = Channel<String>(Channel.BUFFERED)
@@ -72,8 +80,8 @@ class PortfolioViewModel @Inject constructor(
 
     val state: StateFlow<PortfolioUiState> = combine(
         combine(observePortfolio(broker), observePortfolio.brokers(), broker, tab, sort, ::Inputs),
-        observeIndices(), benchmark,
-    ) { (summary, brokers, b, t, s), indices, chosen ->
+        observeIndices(), benchmark, period, details,
+    ) { (summary, brokers, b, t, s), indices, chosen, rp, showDetails ->
         val choices = indices.filter { it.index.category == com.fundamentalanalysis.app.domain.model.IndexCategory.BROAD }
             .sortedBy { BENCHMARK_ORDER.indexOf(it.symbol).let { i -> if (i < 0) Int.MAX_VALUE else i } }
         val picked = choices.firstOrNull { it.symbol == chosen }
@@ -88,14 +96,18 @@ class PortfolioViewModel @Inject constructor(
             broker = b?.takeIf { it in brokers },
             tab = t,
             sort = s,
-            holdings = summary?.positions.orEmpty().sortedBy(s),
-            groups = summary?.groups.orEmpty().map { g -> g.copy(positions = g.positions.sortedBy(s)) },
+            period = rp,
+            showDetails = showDetails,
+            holdings = summary?.positions.orEmpty().sortedBy(s, rp),
+            groups = summary?.groups.orEmpty().map { g -> g.copy(positions = g.positions.sortedBy(s, rp)) },
         )
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PortfolioUiState())
 
     fun onBroker(value: String?) { savedState[KEY_BROKER] = value }
     fun onTab(value: PortfolioTab) { savedState[KEY_TAB] = value }
     fun onSort(value: HoldingSort) { savedState[KEY_SORT] = value }
+    fun onPeriod(value: com.fundamentalanalysis.app.domain.model.ReturnPeriod) { savedState[KEY_PERIOD] = value }
+    fun onToggleDetails() { savedState[KEY_DETAILS] = !details.value }
     /** null = each stock's own index. */
     fun onBenchmark(symbol: String?) { savedState[KEY_BENCHMARK] = symbol }
 
@@ -149,6 +161,8 @@ class PortfolioViewModel @Inject constructor(
         const val KEY_TAB = "portfolio_tab"
         const val KEY_SORT = "portfolio_sort"
         const val KEY_BENCHMARK = "portfolio_benchmark"
+        const val KEY_PERIOD = "portfolio_period"
+        const val KEY_DETAILS = "portfolio_details"
         val BENCHMARK_ORDER = listOf("NIFTY 50", "NIFTY NEXT 50", "NIFTY MIDCAP 150", "NIFTY 500")
     }
 }
@@ -161,9 +175,8 @@ private data class Inputs(
     val sort: HoldingSort,
 )
 
-private fun List<Position>.sortedBy(sort: HoldingSort): List<Position> = when (sort) {
+private fun List<Position>.sortedBy(sort: HoldingSort, rp: com.fundamentalanalysis.app.domain.model.ReturnPeriod): List<Position> = when (sort) {
     HoldingSort.VALUE -> sortedByDescending { it.value }
-    HoldingSort.PNL -> sortedByDescending { it.pnlPct ?: Double.NEGATIVE_INFINITY }
-    HoldingSort.DAY -> sortedByDescending { it.tracked?.metrics?.change1d ?: Double.NEGATIVE_INFINITY }
+    HoldingSort.RETURN -> sortedByDescending { it.periodReturn(rp) ?: Double.NEGATIVE_INFINITY }
     HoldingSort.NAME -> sortedBy { it.symbol }
 }
