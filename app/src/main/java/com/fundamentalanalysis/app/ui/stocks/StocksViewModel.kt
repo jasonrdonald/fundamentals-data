@@ -18,7 +18,12 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 
-enum class StocksTab(val label: String) { SECTORS("Sectors"), RANKINGS("Rankings"), DISTRIBUTION("Distribution"), ALL("All stocks") }
+enum class StocksTab(val label: String, val component: com.fundamentalanalysis.app.domain.model.UiComponent) {
+    SECTORS("Sectors", com.fundamentalanalysis.app.domain.model.UiComponent.STOCKS_SECTORS),
+    RANKINGS("Rankings", com.fundamentalanalysis.app.domain.model.UiComponent.STOCKS_RANKINGS),
+    DISTRIBUTION("Distribution", com.fundamentalanalysis.app.domain.model.UiComponent.STOCKS_DISTRIBUTION),
+    ALL("All stocks", com.fundamentalanalysis.app.domain.model.UiComponent.STOCKS_ALL),
+}
 
 /** Periods offered for "beat the Nifty" sector analysis. */
 val SECTOR_PERIODS = listOf(Period.M1, Period.M3, Period.M6, Period.YTD, Period.Y1, Period.Y3)

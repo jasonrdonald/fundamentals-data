@@ -1,5 +1,9 @@
 package com.fundamentalanalysis.app.ui
 
+import com.fundamentalanalysis.app.ui.settings.CustomizeScreen
+import com.fundamentalanalysis.app.ui.navigation.CustomizeRoute
+import com.fundamentalanalysis.app.ui.components.LocalUiLayout
+import com.fundamentalanalysis.app.domain.model.UiComponent
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.CompareArrows
@@ -46,14 +50,21 @@ import androidx.compose.material.icons.automirrored.filled.ShowChart
 import com.fundamentalanalysis.app.ui.reports.ReportsScreen
 import kotlin.reflect.KClass
 
-private data class TopLevelDestination(val route: Any, val routeClass: KClass<*>, val label: String, val icon: ImageVector)
+private data class TopLevelDestination(
+    val route: Any,
+    val routeClass: KClass<*>,
+    val label: String,
+    val icon: ImageVector,
+    /** Customize page switch; null = always shown. */
+    val component: UiComponent? = null,
+)
 
 private val topLevelDestinations = listOf(
     TopLevelDestination(DashboardRoute, DashboardRoute::class, "Overview", Icons.Filled.Dashboard),
-    TopLevelDestination(IndicesRoute, IndicesRoute::class, "Indices", Icons.AutoMirrored.Filled.List),
-    TopLevelDestination(StocksRoute, StocksRoute::class, "Stocks", Icons.AutoMirrored.Filled.ShowChart),
-    TopLevelDestination(CompareRoute, CompareRoute::class, "Compare", Icons.AutoMirrored.Filled.CompareArrows),
-    TopLevelDestination(ReportsRoute, ReportsRoute::class, "Reports", Icons.Filled.Assessment),
+    TopLevelDestination(IndicesRoute, IndicesRoute::class, "Indices", Icons.AutoMirrored.Filled.List, UiComponent.NAV_INDICES),
+    TopLevelDestination(StocksRoute, StocksRoute::class, "Stocks", Icons.AutoMirrored.Filled.ShowChart, UiComponent.NAV_STOCKS),
+    TopLevelDestination(CompareRoute, CompareRoute::class, "Compare", Icons.AutoMirrored.Filled.CompareArrows, UiComponent.NAV_COMPARE),
+    TopLevelDestination(ReportsRoute, ReportsRoute::class, "Reports", Icons.Filled.Assessment, UiComponent.NAV_REPORTS),
 )
 
 @Composable
@@ -70,7 +81,8 @@ fun FundamentalsApp() {
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
             NavigationBar {
-                topLevelDestinations.forEach { dest ->
+                val layout = LocalUiLayout.current
+                topLevelDestinations.filter { d -> d.component?.let(layout::shows) ?: true }.forEach { dest ->
                     val selected = currentDestination?.hierarchy?.any { it.hasRoute(dest.routeClass) } == true
                     NavigationBarItem(
                         selected = selected,
@@ -99,10 +111,12 @@ fun FundamentalsApp() {
                     onOpenData = { navController.navigate(DataRoute) },
                     onOpenPortfolio = { navController.navigate(PortfolioRoute) },
                     onOpenHeatmap = openHeatmap,
+                    onOpenCustomize = { navController.navigate(CustomizeRoute) { launchSingleTop = true } },
                 )
             }
             composable<PortfolioRoute> { PortfolioScreen(onBack = { navController.popBackStack() }, onOpenStock = openStock) }
             composable<HeatmapRoute> { HeatmapScreen(onBack = { navController.popBackStack() }, onOpenStock = openStock) }
+            composable<CustomizeRoute> { CustomizeScreen(onBack = { navController.popBackStack() }) }
             composable<DataRoute> { DataScreen(onBack = { navController.popBackStack() }) }
             composable<IndicesRoute> { IndicesScreen(onOpenIndex = openIndex) }
             composable<CompareRoute> { CompareScreen(onOpenIndex = openIndex) }

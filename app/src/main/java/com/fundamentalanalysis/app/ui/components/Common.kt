@@ -151,3 +151,6 @@ fun HistoryPending(what: String, modifier: Modifier = Modifier) {
         )
     }
 }
+
+/** The Customize page's choices for the current screen tree (see MainActivity). */
+val LocalUiLayout = androidx.compose.runtime.staticCompositionLocalOf { com.fundamentalanalysis.app.domain.model.UiLayout() }

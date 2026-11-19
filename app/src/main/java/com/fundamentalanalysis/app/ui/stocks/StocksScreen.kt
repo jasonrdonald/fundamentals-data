@@ -1,5 +1,7 @@
 package com.fundamentalanalysis.app.ui.stocks
 
+import com.fundamentalanalysis.app.ui.components.LocalUiLayout
+import com.fundamentalanalysis.app.domain.model.UiComponent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -57,7 +59,10 @@ fun StocksScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    val sel = state.selection
+    val ui = LocalUiLayout.current
+    // Tabs hidden on the Customize page are skipped; if all are hidden, all are shown.
+    val tabs = StocksTab.entries.filter { ui.shows(it.component) }.ifEmpty { StocksTab.entries }
+    val sel = state.selection.let { s -> if (s.tab in tabs) s else s.copy(tab = tabs.first()) }
     val index = state.indexName.ifBlank { "Index" }
 
     ScreenScaffold(
@@ -94,10 +99,10 @@ fun StocksScreen(
             }
             // Scrollable tabs: four views do not fit as segmented buttons on a phone.
             androidx.compose.material3.SecondaryScrollableTabRow(
-                selectedTabIndex = StocksTab.entries.indexOf(sel.tab),
+                selectedTabIndex = tabs.indexOf(sel.tab),
                 edgePadding = 16.dp,
             ) {
-                StocksTab.entries.forEach { tab ->
+                tabs.forEach { tab ->
                     androidx.compose.material3.Tab(
                         selected = sel.tab == tab,
                         onClick = { viewModel.onTab(tab) },

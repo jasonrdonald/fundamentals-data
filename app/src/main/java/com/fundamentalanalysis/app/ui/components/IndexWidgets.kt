@@ -96,6 +96,9 @@ fun LabeledValue(label: String, value: String, modifier: Modifier = Modifier) {
 }
 
 /** Trailing returns for each [Period], laid out as a wrapping grid. */
+/** Periods a simplified Performance card shows. */
+val SIMPLE_PERIODS = listOf(Period.D1, Period.M1, Period.Y1)
+
 @Composable
 fun ReturnsGrid(index: AnalyzedIndex, periods: List<Period> = Period.entries) {
     FlowRow(

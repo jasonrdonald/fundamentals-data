@@ -57,6 +57,10 @@ class StartupViewModel @Inject constructor(
     val themeMode: StateFlow<ThemeMode?> = settings.observeThemeMode()
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
+    /** Customize page choices, provided to every screen through [com.fundamentalanalysis.app.ui.components.LocalUiLayout]. */
+    val uiLayout: StateFlow<com.fundamentalanalysis.app.domain.model.UiLayout> = settings.observeUiLayout()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, com.fundamentalanalysis.app.domain.model.UiLayout())
+
     init {
         viewModelScope.launch {
             try {
@@ -95,7 +99,10 @@ class MainActivity : ComponentActivity() {
             }
             FundamentalsTheme(darkTheme = dark) {
                 val ready by startup.ready.collectAsStateWithLifecycle()
-                if (ready && mode != null) FundamentalsApp() else PreparingData()
+                val layout by startup.uiLayout.collectAsStateWithLifecycle()
+                androidx.compose.runtime.CompositionLocalProvider(com.fundamentalanalysis.app.ui.components.LocalUiLayout provides layout) {
+                    if (ready && mode != null) FundamentalsApp() else PreparingData()
+                }
             }
         }
     }

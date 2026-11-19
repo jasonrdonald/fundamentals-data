@@ -39,6 +39,10 @@ interface MarketRepository {
 interface SettingsRepository {
     fun observeThemeMode(): Flow<com.fundamentalanalysis.app.domain.model.ThemeMode>
     suspend fun setThemeMode(mode: com.fundamentalanalysis.app.domain.model.ThemeMode)
+    /** Which page components are shown, simplified or hidden. */
+    fun observeUiLayout(): Flow<com.fundamentalanalysis.app.domain.model.UiLayout>
+    suspend fun setDisplay(component: com.fundamentalanalysis.app.domain.model.UiComponent, display: com.fundamentalanalysis.app.domain.model.Display)
+    suspend fun resetUiLayout(page: com.fundamentalanalysis.app.domain.model.UiPage? = null)
 }
 
 /** Data that belongs to this device only (never shared). */

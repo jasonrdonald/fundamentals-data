@@ -1,5 +1,9 @@
 package com.fundamentalanalysis.app.ui.dashboard
 
+import androidx.compose.material.icons.filled.Tune
+import com.fundamentalanalysis.app.ui.components.SIMPLE_PERIODS
+import com.fundamentalanalysis.app.ui.components.LocalUiLayout
+import com.fundamentalanalysis.app.domain.model.UiComponent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -56,7 +60,6 @@ import com.fundamentalanalysis.app.ui.components.SectionCard
 import com.fundamentalanalysis.app.ui.components.SessionGrid
 import com.fundamentalanalysis.app.ui.components.StatTile
 import com.fundamentalanalysis.app.ui.components.changeColor
-import com.fundamentalanalysis.app.ui.settings.ThemeAction
 
 private val sectorPeriods = listOf(Period.D1, Period.W1, Period.M1, Period.M3, Period.Y1)
 
@@ -67,6 +70,7 @@ fun DashboardScreen(
     onOpenData: () -> Unit,
     onOpenPortfolio: () -> Unit,
     onOpenHeatmap: () -> Unit,
+    onOpenCustomize: () -> Unit,
     viewModel: DashboardViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -77,7 +81,7 @@ fun DashboardScreen(
         title = "Market overview",
         snackbarHostState = snackbar,
         actions = {
-            ThemeAction()
+            IconButton(onClick = onOpenCustomize) { Icon(Icons.Filled.Tune, contentDescription = "Customize and appearance") }
             IconButton(onClick = onOpenHeatmap) { Icon(Icons.Filled.GridView, contentDescription = "Heatmap") }
             IconButton(onClick = onOpenData) { Icon(Icons.Filled.Storage, contentDescription = "Data management") }
             IconButton(onClick = viewModel::refresh) { Icon(Icons.Filled.Refresh, contentDescription = "Refresh data") }
@@ -106,24 +110,27 @@ private fun DashboardContent(
     onPeriod: (Period) -> Unit,
 ) {
     val headline = state.headline ?: return
+    val ui = LocalUiLayout.current
     LazyColumn(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
-        item { state.data?.let { DataBanner(it, onOpenData) } }
-        item { PortfolioCard(state.portfolio, onOpenPortfolio) }
-        item {
+        if (ui.shows(UiComponent.OVERVIEW_DATA_BANNER)) item { state.data?.let { DataBanner(it, onOpenData) } }
+        if (ui.shows(UiComponent.OVERVIEW_PORTFOLIO)) item { PortfolioCard(state.portfolio, onOpenPortfolio) }
+        if (ui.shows(UiComponent.OVERVIEW_HEADLINE)) item {
             SectionCard(headline.index.name, subtitle = "Latest completed session") {
                 HeadlineQuote(headline)
-                HorizontalDivider(Modifier.padding(vertical = 12.dp))
-                headline.analytics.latest?.let { SessionGrid(it) }
+                if (!ui.simple(UiComponent.OVERVIEW_HEADLINE)) {
+                    HorizontalDivider(Modifier.padding(vertical = 12.dp))
+                    headline.analytics.latest?.let { SessionGrid(it) }
+                }
                 TextButton(onClick = { onOpenIndex(headline.symbol) }, modifier = Modifier.padding(top = 4.dp)) {
                     Text("Full analysis")
                 }
             }
         }
-        item {
+        if (ui.shows(UiComponent.OVERVIEW_BREADTH)) item {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 StatTile(
                     "Breadth (1D)",
@@ -142,9 +149,13 @@ private fun DashboardContent(
                 }
             }
         }
-        item { SectionCard("Performance", subtitle = headline.index.name) { ReturnsGrid(headline) } }
-        item { SectionCard("Momentum & volume", subtitle = headline.index.name) { MomentumPanel(headline) } }
-        item {
+        if (ui.shows(UiComponent.OVERVIEW_PERFORMANCE)) item {
+            SectionCard("Performance", subtitle = headline.index.name) {
+                if (ui.simple(UiComponent.OVERVIEW_PERFORMANCE)) ReturnsGrid(headline, SIMPLE_PERIODS) else ReturnsGrid(headline)
+            }
+        }
+        if (ui.shows(UiComponent.OVERVIEW_MOMENTUM)) item { SectionCard("Momentum & volume", subtitle = headline.index.name) { MomentumPanel(headline) } }
+        if (ui.shows(UiComponent.OVERVIEW_SECTORS)) item {
             SectionCard("Sector performance", subtitle = "Nifty sectoral indices, best first") {
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
                     sectorPeriods.forEachIndexed { i, p ->
@@ -164,7 +175,7 @@ private fun DashboardContent(
                 )
             }
         }
-        state.composition?.let { comp ->
+        state.composition?.takeIf { ui.shows(UiComponent.OVERVIEW_INDUSTRY_MIX) }?.let { comp ->
             item {
                 SectionCard("${comp.indexSymbol} industry mix", subtitle = "Constituents per NSE industry · as of ${comp.asOf ?: "—"}") {
                     HorizontalBars(
@@ -175,7 +186,7 @@ private fun DashboardContent(
                 }
             }
         }
-        if (state.watchlist.isNotEmpty()) {
+        if (state.watchlist.isNotEmpty() && ui.shows(UiComponent.OVERVIEW_WATCHLIST)) {
             item {
                 SectionCard("Your watchlist", subtitle = "Stored on this device only") {
                     Column {

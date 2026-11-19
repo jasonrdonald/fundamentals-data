@@ -1,5 +1,7 @@
 package com.fundamentalanalysis.app.ui.compare
 
+import com.fundamentalanalysis.app.ui.components.LocalUiLayout
+import com.fundamentalanalysis.app.domain.model.UiComponent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -86,6 +88,7 @@ private fun CompareContent(
 ) {
     val colors = LocalChartColors.current
     var picker by remember { mutableStateOf(false) }
+    val ui = LocalUiLayout.current
     LazyColumn(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -130,10 +133,10 @@ private fun CompareContent(
         if (state.selected.isEmpty()) {
             item { EmptyState("Add up to ${CompareViewModel.MAX_SELECTED} indices to compare them side by side.") }
         } else {
-            item { RelativePerformanceCard(state, onRange) }
-            item { ReturnsByPeriodCard(state, onMode) }
-            item { AllIndicesCard(state, onRange) }
-            item { SectionCard("Side by side", subtitle = "Best value per row in bold") { ComparisonTable(state.selected) } }
+            if (ui.shows(UiComponent.COMPARE_RELATIVE)) item { RelativePerformanceCard(state, onRange) }
+            if (ui.shows(UiComponent.COMPARE_PERIODS)) item { ReturnsByPeriodCard(state, onMode) }
+            if (ui.shows(UiComponent.COMPARE_ALL)) item { AllIndicesCard(state, onRange) }
+            if (ui.shows(UiComponent.COMPARE_TABLE)) item { SectionCard("Side by side", subtitle = "Best value per row in bold") { ComparisonTable(state.selected) } }
         }
     }
 }

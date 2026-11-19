@@ -1,5 +1,8 @@
 package com.fundamentalanalysis.app.ui.detail
 
+import com.fundamentalanalysis.app.ui.components.SIMPLE_PERIODS
+import com.fundamentalanalysis.app.ui.components.LocalUiLayout
+import com.fundamentalanalysis.app.domain.model.UiComponent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -100,6 +103,7 @@ fun IndexDetailScreen(
 private fun DetailContent(state: IndexDetailUiState.Ready, onRange: (ChartRange) -> Unit) {
     val idx = state.index
     val a = idx.analytics
+    val ui = LocalUiLayout.current
     LazyColumn(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -115,28 +119,30 @@ private fun DetailContent(state: IndexDetailUiState.Ready, onRange: (ChartRange)
                 HeadlineQuote(idx)
             }
         }
-        a.latest?.let { session ->
+        a.latest?.takeIf { ui.shows(UiComponent.INDEX_SESSION) }?.let { session ->
             item { SectionCard("Previous session", subtitle = Fmt.day(session.date)) { SessionGrid(session) } }
         }
-        item { SectionCard("Performance") { ReturnsGrid(idx) } }
-        item { PriceChartCard(idx, state.range, onRange) }
-        item { SectionCard("Momentum, volume & risk") { MomentumPanel(idx) } }
+        if (ui.shows(UiComponent.INDEX_PERFORMANCE)) item {
+            SectionCard("Performance") { if (ui.simple(UiComponent.INDEX_PERFORMANCE)) ReturnsGrid(idx, SIMPLE_PERIODS) else ReturnsGrid(idx) }
+        }
+        if (ui.shows(UiComponent.INDEX_PRICE_CHART)) item { PriceChartCard(idx, state.range, onRange) }
+        if (ui.shows(UiComponent.INDEX_MOMENTUM)) item { SectionCard("Momentum, volume & risk") { MomentumPanel(idx) } }
         if (a.monthly.size > 1) {
-            item { MonthlyChartCard(a.monthly) }
-            if (idx.symbol == HEADLINE_INDEX) item { ReturnsByYearCard(idx, state.calendars[CalendarKind.RETURNS]) }
+            if (ui.shows(UiComponent.INDEX_MONTHLY)) item { MonthlyChartCard(a.monthly) }
+            if (idx.symbol == HEADLINE_INDEX && ui.shows(UiComponent.INDEX_YEARS)) item { ReturnsByYearCard(idx, state.calendars[CalendarKind.RETURNS]) }
             val valuation = ValuationMeasure.entries.mapNotNull { m -> state.calendars[m.kind]?.let { m to it } }.toMap()
-            if (valuation.isNotEmpty() || idx.index.valuation.isNotEmpty()) item { ValuationByYearCard(idx, valuation) }
-            item {
+            if ((valuation.isNotEmpty() || idx.index.valuation.isNotEmpty()) && ui.shows(UiComponent.INDEX_VALUATION)) item { ValuationByYearCard(idx, valuation) }
+            if (ui.shows(UiComponent.INDEX_MONTHLY)) item {
                 SectionCard(
                     "Month-on-month",
                     subtitle = "Newest first · MTD = month to date" + if (!state.historyReady) " · older months are still loading" else "",
                 ) { MonthlyTable(a.monthly) }
             }
         }
-        if (idx.index.daily.any { (it.volume ?: 0) > 0 }) {
+        if (idx.index.daily.any { (it.volume ?: 0) > 0 } && ui.shows(UiComponent.INDEX_VOLUME)) {
             item { VolumeCard(idx) }
         }
-        state.composition?.let { comp -> item { CompositionCard(comp) } }
+        state.composition?.takeIf { ui.shows(UiComponent.INDEX_COMPOSITION) }?.let { comp -> item { CompositionCard(comp) } }
         idx.index.source?.let { src ->
             item {
                 Text(

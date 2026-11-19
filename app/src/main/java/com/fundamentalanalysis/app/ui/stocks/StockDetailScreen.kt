@@ -1,5 +1,7 @@
 package com.fundamentalanalysis.app.ui.stocks
 
+import com.fundamentalanalysis.app.ui.components.LocalUiLayout
+import com.fundamentalanalysis.app.domain.model.UiComponent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -117,6 +119,7 @@ fun StockDetailScreen(onBack: () -> Unit, viewModel: StockDetailViewModel = hilt
 private fun StockContent(st: AnalyzedStock, benchmark: MarketIndex?, historyReady: Boolean) {
     val m = st.metrics
     val benchName = benchmark?.name ?: st.stock.indexSymbol
+    val ui = LocalUiLayout.current
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxSize()) {
         item {
             Column {
@@ -133,19 +136,21 @@ private fun StockContent(st: AnalyzedStock, benchmark: MarketIndex?, historyRead
                 }
             }
         }
-        item { VersusIndexCard(st, benchName) }
-        if (benchmark != null) item { RelativeChartCard(st, benchmark, historyReady) }
-        item { FactorsCard(st) }
+        if (ui.shows(UiComponent.STOCK_VS_INDEX)) item { VersusIndexCard(st, benchName) }
+        if (benchmark != null && ui.shows(UiComponent.STOCK_CHART)) item { RelativeChartCard(st, benchmark, historyReady) }
+        if (ui.shows(UiComponent.STOCK_FACTORS)) item { FactorsCard(st, simple = ui.simple(UiComponent.STOCK_FACTORS)) }
         if (!historyReady) {
             item { SectionCard("Year-by-month returns and financials") { HistoryPending("this stock") } }
         }
-        if (st.stock.monthly.size > 12) item { YearTableCard(st) }
-        if (st.stock.annual.isNotEmpty()) {
+        if (st.stock.monthly.size > 12 && ui.shows(UiComponent.STOCK_YEARS)) item { YearTableCard(st) }
+        if (st.stock.annual.isNotEmpty() && ui.shows(UiComponent.STOCK_ANNUAL)) {
             item {
-                SectionCard("Annual financials", subtitle = "Fiscal years · ₹ crore (EPS in ₹)") { FinancialsTable(st.stock.annual, showBalanceSheet = true) }
+                SectionCard("Annual financials", subtitle = "Fiscal years · ₹ crore (EPS in ₹)") {
+                    FinancialsTable(st.stock.annual, showBalanceSheet = !ui.simple(UiComponent.STOCK_ANNUAL))
+                }
             }
         }
-        if (st.stock.quarterly.isNotEmpty()) {
+        if (st.stock.quarterly.isNotEmpty() && ui.shows(UiComponent.STOCK_QUARTERLY)) {
             item {
                 SectionCard("Quarterly results", subtitle = "Latest quarters available · ₹ crore (EPS in ₹)") { FinancialsTable(st.stock.quarterly, showBalanceSheet = false) }
             }
@@ -230,12 +235,12 @@ private fun RelativeChartCard(st: AnalyzedStock, benchmark: MarketIndex, history
 }
 
 @Composable
-private fun FactorsCard(st: AnalyzedStock) {
+private fun FactorsCard(st: AnalyzedStock, simple: Boolean = false) {
     SectionCard("Factor profile", subtitle = "The measures used in the Rankings tab") {
         StockFactor.entries.forEachIndexed { i, f ->
             if (i > 0) HorizontalDivider(Modifier.padding(vertical = 4.dp))
-            Text(f.label, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
-            (listOf(f.primary) + f.supporting).distinct().forEach { metric ->
+            if (!simple) Text(f.label, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
+            (if (simple) listOf(f.primary) else (listOf(f.primary) + f.supporting).distinct()).forEach { metric ->
                 val v = st.valueOf(metric)
                 val signed = metric.format == com.fundamentalanalysis.app.domain.model.StockFormat.SIGNED_PERCENT ||
                     metric.format == com.fundamentalanalysis.app.domain.model.StockFormat.POINTS

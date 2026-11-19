@@ -12,3 +12,4 @@ import kotlinx.serialization.Serializable
 @Serializable data object DataRoute
 @Serializable data object PortfolioRoute
 @Serializable data object HeatmapRoute
+@Serializable data object CustomizeRoute

@@ -24,7 +24,14 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-enum class PortfolioTab(val label: String) { HOLDINGS("Holdings"), HEATMAP("Heatmap"), ALLOCATION("Allocation"), VS_INDEX("vs Index"), ACTIVITY("Activity") }
+/** [component] = Customize page switch (null = always shown). */
+enum class PortfolioTab(val label: String, val component: com.fundamentalanalysis.app.domain.model.UiComponent? = null) {
+    HOLDINGS("Holdings"),
+    HEATMAP("Heatmap", com.fundamentalanalysis.app.domain.model.UiComponent.PORTFOLIO_HEATMAP),
+    ALLOCATION("Allocation", com.fundamentalanalysis.app.domain.model.UiComponent.PORTFOLIO_ALLOCATION),
+    VS_INDEX("vs Index", com.fundamentalanalysis.app.domain.model.UiComponent.PORTFOLIO_VS_INDEX),
+    ACTIVITY("Activity", com.fundamentalanalysis.app.domain.model.UiComponent.PORTFOLIO_ACTIVITY),
+}
 
 /** RETURN sorts by the selected [ReturnPeriod]. */
 enum class HoldingSort(val label: String) { VALUE("Value"), RETURN("Return"), NAME("Name") }

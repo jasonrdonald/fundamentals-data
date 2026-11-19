@@ -5,7 +5,11 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.fundamentalanalysis.app.di.SettingsStore
+import com.fundamentalanalysis.app.domain.model.Display
 import com.fundamentalanalysis.app.domain.model.ThemeMode
+import com.fundamentalanalysis.app.domain.model.UiComponent
+import com.fundamentalanalysis.app.domain.model.UiLayout
+import com.fundamentalanalysis.app.domain.model.UiPage
 import com.fundamentalanalysis.app.domain.repository.SettingsRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -26,7 +30,25 @@ class SettingsPreferences @Inject constructor(
         dataStore.edit { it[THEME] = mode.name }
     }
 
+    override fun observeUiLayout(): Flow<UiLayout> = dataStore.data.map { UiLayout.decode(it[UI_LAYOUT]) }
+
+    override suspend fun setDisplay(component: UiComponent, display: Display) {
+        dataStore.edit { prefs ->
+            val current = UiLayout.decode(prefs[UI_LAYOUT])
+            prefs[UI_LAYOUT] = UiLayout(current.choices + (component to display)).encode()
+        }
+    }
+
+    override suspend fun resetUiLayout(page: UiPage?) {
+        dataStore.edit { prefs ->
+            val current = UiLayout.decode(prefs[UI_LAYOUT])
+            prefs[UI_LAYOUT] = if (page == null) "" else UiLayout(current.choices.filterKeys { it.page != page }).encode()
+        }
+    }
+
     private companion object {
         val THEME = stringPreferencesKey("theme_mode")
+        /** "COMPONENT=DISPLAY;..." with only the non-default choices. */
+        val UI_LAYOUT = stringPreferencesKey("ui_layout")
     }
 }

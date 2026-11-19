@@ -1,5 +1,7 @@
 package com.fundamentalanalysis.app.ui.portfolio
 
+import com.fundamentalanalysis.app.ui.components.LocalUiLayout
+import com.fundamentalanalysis.app.domain.model.UiComponent
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Visibility
 import com.fundamentalanalysis.app.domain.model.periodGain
@@ -185,6 +187,12 @@ private fun PrivacyNote() {
 @Composable
 private fun PortfolioContent(state: PortfolioUiState, vm: PortfolioViewModel, onOpenStock: (String) -> Unit) {
     val summary = state.summary
+    val ui = LocalUiLayout.current
+    val tabs = PortfolioTab.entries.filter { t -> t.component?.let(ui::shows) ?: true }
+    val tab = state.tab.takeIf { it in tabs } ?: PortfolioTab.HOLDINGS
+    val showPeriods = ui.shows(UiComponent.PORTFOLIO_PERIODS)
+    // Without the selector, returns are all time.
+    androidx.compose.runtime.LaunchedEffect(showPeriods) { if (!showPeriods && state.period != ReturnPeriod.ALL) vm.onPeriod(ReturnPeriod.ALL) }
     LazyColumn(contentPadding = PaddingValues(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxSize()) {
         if (state.brokers.size > 1) {
             item {
@@ -198,21 +206,23 @@ private fun PortfolioContent(state: PortfolioUiState, vm: PortfolioViewModel, on
             item { Text("Nothing imported for this broker.", Modifier.padding(16.dp)) }
             return@LazyColumn
         }
-        item {
+        if (showPeriods) item {
             // Return window for the whole page: summary, index groups and holdings.
             LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(ReturnPeriod.entries) { rp -> FilterChip(state.period == rp, onClick = { vm.onPeriod(rp) }, label = { Text(rp.label) }) }
             }
         }
-        item { SummaryCard(summary, state.period, Modifier.padding(horizontal = 16.dp)) }
+        if (ui.shows(UiComponent.PORTFOLIO_SUMMARY)) item {
+            SummaryCard(summary, state.period, Modifier.padding(horizontal = 16.dp), simple = ui.simple(UiComponent.PORTFOLIO_SUMMARY))
+        }
         item {
-            SecondaryScrollableTabRow(selectedTabIndex = PortfolioTab.entries.indexOf(state.tab), edgePadding = 16.dp) {
-                PortfolioTab.entries.forEach { t ->
-                    Tab(selected = state.tab == t, onClick = { vm.onTab(t) }, text = { Text(t.label, maxLines = 1) })
+            SecondaryScrollableTabRow(selectedTabIndex = tabs.indexOf(tab), edgePadding = 16.dp) {
+                tabs.forEach { t ->
+                    Tab(selected = tab == t, onClick = { vm.onTab(t) }, text = { Text(t.label, maxLines = 1) })
                 }
             }
         }
-        when (state.tab) {
+        when (tab) {
             PortfolioTab.HOLDINGS -> {
                 item {
                     LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -233,7 +243,7 @@ private fun PortfolioContent(state: PortfolioUiState, vm: PortfolioViewModel, on
                     GroupCard(g, Modifier.padding(horizontal = 16.dp), period = state.period) {
                         g.positions.forEachIndexed { i, p ->
                             if (i > 0) HorizontalDivider()
-                            HoldingRow(p, state.period, state.showDetails, onOpenStock)
+                            HoldingRow(p, state.period, state.showDetails, onOpenStock, simple = ui.simple(UiComponent.PORTFOLIO_HOLDING_ROWS))
                         }
                     }
                 }
@@ -243,12 +253,12 @@ private fun PortfolioContent(state: PortfolioUiState, vm: PortfolioViewModel, on
             PortfolioTab.VS_INDEX -> item { VsIndexCards(summary, onOpenStock, state, vm::onBenchmark) }
             PortfolioTab.ACTIVITY -> item { ActivityCards(summary) }
         }
-        item { Column(Modifier.padding(horizontal = 16.dp)) { PrivacyNote() } }
+        if (ui.shows(UiComponent.PORTFOLIO_PRIVACY)) item { Column(Modifier.padding(horizontal = 16.dp)) { PrivacyNote() } }
     }
 }
 
 @Composable
-private fun SummaryCard(s: PortfolioSummary, period: ReturnPeriod, modifier: Modifier) {
+private fun SummaryCard(s: PortfolioSummary, period: ReturnPeriod, modifier: Modifier, simple: Boolean = false) {
     SectionCard("Current value", modifier, subtitle = s.accounts.joinToString(" · ") { "${it.broker} ${it.clientId}" }) {
         Text(Fmt.inr(s.value), style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.SemiBold)
         if (period != ReturnPeriod.ALL) {
@@ -271,6 +281,7 @@ private fun SummaryCard(s: PortfolioSummary, period: ReturnPeriod, modifier: Mod
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        if (simple) return@SectionCard
         Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             KeyValueRow("Invested (cost)", Fmt.inr(s.invested))
             if (s.uncostedValue > 1) {
@@ -292,24 +303,30 @@ private fun SummaryCard(s: PortfolioSummary, period: ReturnPeriod, modifier: Mod
 }
 
 @Composable
-private fun HoldingRow(p: Position, period: ReturnPeriod, showDetails: Boolean, onOpenStock: (String) -> Unit) {
+private fun HoldingRow(p: Position, period: ReturnPeriod, showDetails: Boolean, onOpenStock: (String) -> Unit, simple: Boolean = false) {
     val tracked = p.tracked
     Column(
         Modifier.fillMaxWidth()
             .then(if (tracked != null) Modifier.clickable { onOpenStock(tracked.symbol) } else Modifier)
-            .padding(vertical = 10.dp),
+            .padding(vertical = if (simple) 6.dp else 10.dp),
     ) {
-        Row(verticalAlignment = Alignment.Top) {
+        Row(verticalAlignment = if (simple) Alignment.CenterVertically else Alignment.Top) {
             Column(Modifier.weight(1f)) {
                 Text(p.symbol, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(
+                if (!simple) Text(
                     listOfNotNull(tracked?.stock?.name, p.sector).joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
             }
-            Column(horizontalAlignment = Alignment.End) {
+            if (simple) {
+                val r = p.periodReturn(period)
+                val gain = p.periodGain(period)
+                Text(Fmt.inr(p.value), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(end = 12.dp))
+                if (r != null && gain != null) ChangeText(Fmt.signedPercent(r), gain, style = MaterialTheme.typography.bodyMedium)
+                else Text("—", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else Column(horizontalAlignment = Alignment.End) {
                 Text(Fmt.inr(p.value), style = MaterialTheme.typography.titleSmall)
                 val r = p.periodReturn(period)
                 val gain = p.periodGain(period)
