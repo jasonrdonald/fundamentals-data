@@ -1,9 +1,9 @@
 {
  "schemaVersion": 4,
- "version": 4,
- "datasetVersion": 10,
- "asOf": "2026-11-17",
- "generatedAt": "2026-11-18T04:02:17Z",
+ "version": 7,
+ "datasetVersion": 13,
+ "asOf": "2026-11-19",
+ "generatedAt": "2026-11-19T16:28:23Z",
  "loadOrder": [
   "analytics",
   "core",
@@ -13,32 +13,73 @@
   {
    "name": "analytics",
    "file": "analytics.json",
-   "version": 4,
-   "bytes": 251325,
-   "sha256": "47f733b2290903037c4a3fbe2ae4b13ede6e79a1578a876639f8c861e080d984",
+   "version": 7,
+   "bytes": 251249,
+   "sha256": "a023f503448c2e6a3bba57d4426595ba4ad3d89fb1f5784123a78dd3b9e1c633",
    "records": 609,
    "description": "Precomputed metrics, sector aggregates and calendar tables"
   },
   {
    "name": "core",
    "file": "core.json",
-   "version": 3,
-   "bytes": 414340,
-   "sha256": "1f042ede0f01b76c1ce0ef4d5287eae16fbbb8daf1d328391bf3ea12068c5262",
+   "version": 7,
+   "bytes": 414367,
+   "sha256": "ece07c23e75e60c9954e40e9d8d009356e168a75ab7894a6bb936d0905a8d635",
    "records": 9447,
    "description": "Latest 300 index sessions, last 13 months, constituents and stock list"
   },
   {
    "name": "history",
    "file": "history.json",
-   "version": 3,
-   "bytes": 982100,
-   "sha256": "dbedc8e43f0faf30eaada5d9ebbef1b3331af708d6ff4222038f5a91293b649e",
+   "version": 7,
+   "bytes": 982079,
+   "sha256": "c9c40727f273e1eb0a944368ba24c8964dc46901824145036c3ce2d57ac455ae",
    "records": 99239,
    "description": "Full monthly history, valuation history, stock daily closes and financials"
   }
  ],
  "history": [
+  {
+   "version": 7,
+   "datasetVersion": 13,
+   "generatedAt": "2026-11-19T16:28:23Z",
+   "asOf": "2026-11-19",
+   "changed": [
+    "analytics",
+    "core",
+    "history"
+   ],
+   "failures": [],
+   "indices": 19,
+   "stocks": 250
+  },
+  {
+   "version": 6,
+   "datasetVersion": 12,
+   "generatedAt": "2026-11-18T19:34:21Z",
+   "asOf": "2026-11-18",
+   "changed": [
+    "analytics",
+    "core"
+   ],
+   "failures": [],
+   "indices": 19,
+   "stocks": 250
+  },
+  {
+   "version": 5,
+   "datasetVersion": 11,
+   "generatedAt": "2026-11-18T15:53:26Z",
+   "asOf": "2026-11-18",
+   "changed": [
+    "analytics",
+    "core",
+    "history"
+   ],
+   "failures": [],
+   "indices": 19,
+   "stocks": 250
+  },
   {
    "version": 4,
    "datasetVersion": 10,

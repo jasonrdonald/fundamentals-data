@@ -83,15 +83,15 @@ class DatasetSyncTest {
         assertEquals(1, remote.reads["history.json"])
         assertEquals(RefreshResult.UpToDate, sync.refresh(force = false))
         assertEquals(1, remote.reads["history.json"])
-        remote.manifestOverride = manifestWith(DatasetFiles.seedDir, mapOf("analytics" to 7))
-        assertEquals(RefreshResult.Updated(7, listOf(DataPart.ANALYTICS)), sync.refresh(force = false))
+        remote.manifestOverride = manifestWith(DatasetFiles.seedDir, mapOf("analytics" to seedVersion + 100))
+        assertEquals(RefreshResult.Updated(seedVersion + 100, listOf(DataPart.ANALYTICS)), sync.refresh(force = false))
         assertEquals(1, remote.reads["analytics.json"])
         assertNull(remote.reads["core.json"])
     }
 
     @Test fun `checksum mismatch is rejected and data kept`() = runBlocking {
         sync.ensurePrimary()
-        remote.manifestOverride = manifestWith(DatasetFiles.seedDir, mapOf("core" to 9), badSha = setOf("core"))
+        remote.manifestOverride = manifestWith(DatasetFiles.seedDir, mapOf("core" to seedVersion + 2), badSha = setOf("core"))
         val result = sync.refresh(force = true)
         assertTrue(result is RefreshResult.Failed && result.message.contains("checksum"))
         assertEquals(seedPartVersion(DataPart.CORE), version(DataPart.CORE))
@@ -100,7 +100,7 @@ class DatasetSyncTest {
 
     @Test fun `newer schema is ignored until the app is updated`() = runBlocking {
         sync.ensurePrimary()
-        remote.manifestOverride = manifestWith(DatasetFiles.seedDir, mapOf("core" to 9), schema = 5)
+        remote.manifestOverride = manifestWith(DatasetFiles.seedDir, mapOf("core" to seedVersion + 2), schema = 5)
         assertTrue(sync.refresh(force = true) is RefreshResult.Failed)
         assertEquals(seedPartVersion(DataPart.CORE), version(DataPart.CORE))
     }
