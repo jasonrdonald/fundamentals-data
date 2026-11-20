@@ -1,9 +1,9 @@
 {
  "schemaVersion": 4,
- "version": 7,
- "datasetVersion": 13,
- "asOf": "2026-11-19",
- "generatedAt": "2026-11-19T16:28:23Z",
+ "version": 13,
+ "datasetVersion": 19,
+ "asOf": "2026-11-20",
+ "generatedAt": "2026-11-20T20:51:13Z",
  "loadOrder": [
   "analytics",
   "core",
@@ -13,32 +13,117 @@
   {
    "name": "analytics",
    "file": "analytics.json",
-   "version": 7,
-   "bytes": 251249,
-   "sha256": "a023f503448c2e6a3bba57d4426595ba4ad3d89fb1f5784123a78dd3b9e1c633",
-   "records": 609,
+   "version": 13,
+   "bytes": 304538,
+   "sha256": "17afdf22f646b1d81747c64b999343e257406815c062239e94dafba2226ce02c",
+   "records": 761,
    "description": "Precomputed metrics, sector aggregates and calendar tables"
   },
   {
    "name": "core",
    "file": "core.json",
-   "version": 7,
-   "bytes": 414367,
-   "sha256": "ece07c23e75e60c9954e40e9d8d009356e168a75ab7894a6bb936d0905a8d635",
-   "records": 9447,
+   "version": 13,
+   "bytes": 433837,
+   "sha256": "d60d71d16521c711e6698179dbf130340855020402079983033d96485655f5f8",
+   "records": 10203,
    "description": "Latest 300 index sessions, last 13 months, constituents and stock list"
   },
   {
    "name": "history",
    "file": "history.json",
-   "version": 7,
-   "bytes": 982079,
-   "sha256": "c9c40727f273e1eb0a944368ba24c8964dc46901824145036c3ce2d57ac455ae",
-   "records": 99239,
+   "version": 13,
+   "bytes": 1159882,
+   "sha256": "d7ffd6fd5fb0dd581dd737c586ce0dedb8b4666eef9006724c1ee66e3e4cdf03",
+   "records": 120299,
    "description": "Full monthly history, valuation history, stock daily closes and financials"
   }
  ],
  "history": [
+  {
+   "version": 13,
+   "datasetVersion": 19,
+   "generatedAt": "2026-11-20T20:51:13Z",
+   "asOf": "2026-11-20",
+   "changed": [
+    "analytics",
+    "core",
+    "history"
+   ],
+   "failures": [],
+   "indices": 19,
+   "stocks": 304
+  },
+  {
+   "version": 12,
+   "datasetVersion": 18,
+   "generatedAt": "2026-11-20T19:35:01Z",
+   "asOf": "2026-11-20",
+   "changed": [
+    "analytics",
+    "core",
+    "history"
+   ],
+   "failures": [],
+   "indices": 19,
+   "stocks": 301
+  },
+  {
+   "version": 11,
+   "datasetVersion": 17,
+   "generatedAt": "2026-11-20T18:03:42Z",
+   "asOf": "2026-11-20",
+   "changed": [
+    "analytics",
+    "core",
+    "history"
+   ],
+   "failures": [
+    "stock:BAGMANE"
+   ],
+   "indices": 21,
+   "stocks": 749
+  },
+  {
+   "version": 10,
+   "datasetVersion": 16,
+   "generatedAt": "2026-11-20T17:45:01Z",
+   "asOf": "2026-11-20",
+   "changed": [
+    "analytics",
+    "core",
+    "history"
+   ],
+   "failures": [],
+   "indices": 19,
+   "stocks": 250
+  },
+  {
+   "version": 9,
+   "datasetVersion": 15,
+   "generatedAt": "2026-11-20T09:50:55Z",
+   "asOf": "2026-11-19",
+   "changed": [
+    "analytics",
+    "core",
+    "history"
+   ],
+   "failures": [],
+   "indices": 19,
+   "stocks": 250
+  },
+  {
+   "version": 8,
+   "datasetVersion": 14,
+   "generatedAt": "2026-11-19T23:24:08Z",
+   "asOf": "2026-11-19",
+   "changed": [
+    "analytics",
+    "core"
+   ],
+   "failures": [],
+   "indices": 19,
+   "stocks": 250
+  },
   {
    "version": 7,
    "datasetVersion": 13,
