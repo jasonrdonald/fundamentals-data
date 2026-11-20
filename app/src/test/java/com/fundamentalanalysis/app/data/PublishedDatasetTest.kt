@@ -82,7 +82,7 @@ class PublishedDatasetTest {
         val months = core.stocks.months.map(LocalDate::parse)
         assertEquals("stock symbols unique", core.stocks.items.size, core.stocks.items.map { it.symbol }.toSet().size)
         core.stocks.items.forEach { s ->
-            assertTrue("${s.symbol}: benchmark ${s.index} missing", s.index in symbols)
+            assertTrue("${s.symbol}: benchmark ${s.index} missing", com.fundamentalanalysis.app.domain.usecase.ObserveAnalyzedStocksUseCase.benchmarkOf(s.index) in symbols)
             assertEquals("${s.symbol}: mc not aligned", months.size, s.mc.size)
         }
         core.universes.forEach { u ->
@@ -105,10 +105,13 @@ class PublishedDatasetTest {
         assertTrue("valuation history", valuation.size >= 120)
         assertEquals("one valuation point per month", valuation.map { it.date.withDayOfMonth(1) }.distinct().size, valuation.size)
         assertTrue("implausible P/E", valuation.all { (it.pe ?: 0.0) in 5.0..60.0 })
+        val wishlist = core.stocks.items.filter { it.index == com.fundamentalanalysis.app.domain.usecase.ObserveAnalyzedStocksUseCase.WISHLIST }.map { it.symbol }.toSet()
         history.stocks.items.forEach { s ->
             assertEquals("${s.symbol}: mc", history.stocks.months.size, s.mc.size)
             assertEquals("${s.symbol}: dc", history.stocks.sessions.size, s.dc.size)
-            assertTrue("${s.symbol}: too little daily history", s.dc.count { it != null } >= 60)
+            // Wishlist stocks may be new listings (or quoted only day by day); index constituents need 60 sessions.
+            val minimum = if (s.symbol in wishlist) 1 else 60
+            assertTrue("${s.symbol}: too little daily history", s.dc.count { it != null } >= minimum)
             assertTrue("${s.symbol}: non-positive close", (s.mc + s.dc).filterNotNull().all { it > 0 })
         }
     }

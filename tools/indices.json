@@ -129,7 +129,7 @@
     }
   ],
   "stocks": {
-    "note": "Constituent stocks per index: price history and fundamentals. Each stock is benchmarked against its own index; watchlist stocks against the universe's benchmark.",
+    "note": "Constituent stocks per index: price history and fundamentals. Each stock is benchmarked against its own index; wishlist stocks against the universe's benchmark.",
     "universes": [
       {
         "index": "NIFTY 50",
@@ -144,9 +144,9 @@
         "url": "https://archives.nseindia.com/content/indices/ind_niftymidcap150list.csv"
       },
       {
-        "index": "WATCHLIST",
-        "name": "Watchlist",
-        "file": "tools/watchlist.csv",
+        "index": "WISHLIST",
+        "name": "Wishlist",
+        "file": "tools/wishlist.csv",
         "benchmark": "NIFTY 500"
       }
     ]

@@ -65,17 +65,17 @@ class ObserveAnalyzedStocksUseCase @Inject constructor(
 
     companion object {
         /** Display order of stock universes. */
-        val UNIVERSE_ORDER = listOf("NIFTY 50", "NIFTY NEXT 50", "NIFTY MIDCAP 150", WATCHLIST)
+        val UNIVERSE_ORDER = listOf("NIFTY 50", "NIFTY NEXT 50", "NIFTY MIDCAP 150", WISHLIST)
 
-        /** The dataset's watchlist universe: stocks outside the indices above, kept in tools/watchlist.csv. */
-        const val WATCHLIST = "WATCHLIST"
-        const val WATCHLIST_NAME = "Watchlist"
+        /** The dataset's wishlist universe: stocks outside the indices above, kept in tools/wishlist.csv. */
+        const val WISHLIST = "WISHLIST"
+        const val WISHLIST_NAME = "Wishlist"
 
-        /** Benchmark for the watchlist and for stocks fetched on the device (tools/indices.json says the same). */
+        /** Benchmark for the wishlist and for stocks fetched on the device (tools/indices.json says the same). */
         const val HOLDING_BENCHMARK = "NIFTY 500"
 
         /** The index a stock of universe [indexSymbol] is measured against. */
         fun benchmarkOf(indexSymbol: String): String =
-            if (indexSymbol.isEmpty() || indexSymbol == WATCHLIST) HOLDING_BENCHMARK else indexSymbol
+            if (indexSymbol.isEmpty() || indexSymbol == WISHLIST) HOLDING_BENCHMARK else indexSymbol
     }
 }

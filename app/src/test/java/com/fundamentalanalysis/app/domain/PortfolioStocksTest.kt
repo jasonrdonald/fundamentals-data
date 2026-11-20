@@ -75,8 +75,8 @@ class PortfolioStocksTest {
         assertEquals(0.10, nifty.first().benchmarkReturn!!, 1e-12)
     }
 
-    @Test fun `watchlist stocks and device-fetched stocks share the Nifty 500 benchmark`() {
-        val w = stock("W", "WATCHLIST", "IT", 0.30, 0.12)
+    @Test fun `wishlist stocks and device-fetched stocks share the Nifty 500 benchmark`() {
+        val w = stock("W", "WISHLIST", "IT", 0.30, 0.12)
         val d = stock("D", "", "IT", 0.05, 0.12)
         val other = PortfolioStocks.holdings(listOf(
             position("W", HoldingKind.STOCK, 100.0, w), position("D", HoldingKind.STOCK, 50.0, d),

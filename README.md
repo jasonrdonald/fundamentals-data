@@ -10,7 +10,7 @@ An Android app for analysing and reporting on **Nifty indices**. Every install r
 | Month-on-month | 72 months of open, high, low, close and volume, built from daily sessions |
 | Daily history | 300 sessions of open, high, low, close and volume |
 | Classification | Nifty 50 constituents with NSE's industry classification |
-| Constituent stocks | About 300 stocks: all members of the Nifty 50, Nifty Next 50 and Nifty Midcap 150 (lists from NSE), plus a watchlist of other stocks ([tools/watchlist.csv](tools/watchlist.csv), measured against the Nifty 500). For each: 10 years of monthly prices, about a year of daily closes, trailing P/E, P/B and market cap, 4 fiscal years of financials (revenue, profit, operating income, equity, debt, EPS) and up to 5 quarters. Source: Yahoo Finance. Amounts are in ₹ crore. |
+| Constituent stocks | About 300 stocks: all members of the Nifty 50, Nifty Next 50 and Nifty Midcap 150 (lists from NSE), plus a wishlist of other stocks ([tools/wishlist.csv](tools/wishlist.csv), measured against the Nifty 500; an optional Yahoo column gives the Yahoo symbol for BSE-only or SME listings, whose history is kept and extended day by day). For each: 10 years of monthly prices, about a year of daily closes, trailing P/E, P/B and market cap, 4 fiscal years of financials (revenue, profit, operating income, equity, debt, EPS) and up to 5 quarters. Source: Yahoo Finance. Amounts are in ₹ crore. |
 | Nifty 50 history | Full monthly history since September 2007 (other indices keep 72 months) |
 | Nifty 50 valuation | Month-end P/E, P/B and dividend yield since April 2012, from NSE's official daily index archive (`archives.nseindia.com/content/indices/ind_close_all_DDMMYYYY.csv`) |
 
@@ -39,7 +39,7 @@ Not included yet:
   - **P/E history** (Nifty 50 only): the same layout with month-end P/E, switchable to P/B or dividend yield. The last column is the change over the year.
 
   Both tables export to CSV. The Year column stays visible when you scroll sideways.
-- **Stocks** (pick Nifty 50, Next 50, Midcap 150 or Watchlist at the top; each stock is compared with its own index):
+- **Stocks** (pick Nifty 50, Next 50, Midcap 150 or Wishlist at the top; each stock is compared with its own index):
   - *Sectors* view: for 1M, 3M, 6M, YTD, 1Y or 3Y, shows which stocks in each NSE sector beat their index and by how many percentage points. It also gives each sector's beat count and equal-weighted average return.
   - *Rankings* view: top or bottom 10, 20 or 30 stocks for each section:
     - momentum (12-1 month)

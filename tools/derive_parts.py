@@ -384,7 +384,7 @@ def build_parts(ds: dict) -> dict[str, dict]:
     months, sessions, items = stocks["months"], stocks["sessions"], stocks["items"]
     as_of = ds.get("updatedAt")
 
-    # Each universe is measured against its own index, or the benchmark it names (the watchlist).
+    # Each universe is measured against its own index, or the benchmark it names (the wishlist).
     bench_of = {u["index"]: u.get("benchmark") or u["index"] for u in ds.get("universes") or []}
     benchmarks = {}
     for universe in sorted({s["index"] for s in items}):

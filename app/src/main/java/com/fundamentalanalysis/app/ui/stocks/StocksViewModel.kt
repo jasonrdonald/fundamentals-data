@@ -96,7 +96,7 @@ class StocksViewModel @Inject constructor(
     val state: StateFlow<StocksUiState> = combine(
         observeStocks(), observeStocks.sectors(), market.observeIndices(), selection, observePortfolio(),
     ) { allStocks, sectorStats, indices, sel, portfolio ->
-        val names = indices.associate { it.symbol to it.name } + (ObserveAnalyzedStocksUseCase.WATCHLIST to ObserveAnalyzedStocksUseCase.WATCHLIST_NAME)
+        val names = indices.associate { it.symbol to it.name } + (ObserveAnalyzedStocksUseCase.WISHLIST to ObserveAnalyzedStocksUseCase.WISHLIST_NAME)
         val positions = portfolio?.positions.orEmpty()
         val portfolioSize = PortfolioStocks.holdings(positions, HoldingFilter.ALL).size
         if (sel.universe == PORTFOLIO_UNIVERSE && portfolioSize > 0) {
@@ -148,7 +148,7 @@ class StocksViewModel @Inject constructor(
         val stocks = PortfolioStocks.analysed(held)
         // One index: compare with it. Several (or none): each stock with its own index, and the
         // distribution against the Nifty 50.
-        // Watchlist stocks and stocks outside the dataset are measured against the Nifty 500.
+        // Wishlist stocks and stocks outside the dataset are measured against the Nifty 500.
         val single = stocks.map { ObserveAnalyzedStocksUseCase.benchmarkOf(it.stock.indexSymbol) }.distinct().singleOrNull()
         val refSymbol = single ?: "NIFTY 50"
         val refName = names[refSymbol] ?: refSymbol

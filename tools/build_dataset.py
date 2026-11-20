@@ -350,6 +350,7 @@ def fetch_constituents(cfg: dict) -> dict:
     rows = list(csv.DictReader(io.StringIO(text)))
     constituents = [
         {"symbol": r["Symbol"].strip(), "name": r["Company Name"].strip(), "industry": r["Industry"].strip()}
+        | ({"yahoo": r["Yahoo"].strip()} if (r.get("Yahoo") or "").strip() else {})
         # NSE lists placeholder rows ("DUMMY...") for pending index changes; they have no prices.
         for r in rows if r.get("Symbol") and not r["Symbol"].strip().upper().startswith("DUMMY")
     ]
@@ -361,7 +362,10 @@ def fetch_constituents(cfg: dict) -> dict:
         "source": cfg.get("url") or cfg["file"],
         "constituents": sorted(constituents, key=lambda c: c["symbol"]),
     }
-    # A universe that is not itself an index (the watchlist) names the index it is measured against.
+    # A universe that is not itself an index (the wishlist) names the index it is measured against.
+    # Its stocks may be new listings, so they need less history than index constituents.
+    if cfg.get("file"):
+        out["minSessions"] = 1
     for key in ("name", "benchmark"):
         if cfg.get(key):
             out[key] = cfg[key]
@@ -500,14 +504,20 @@ def fetch_fundamentals(yahoo: str) -> dict:
     }
 
 
-def fetch_stock(constituent: dict, index: str) -> dict:
-    yahoo = yahoo_symbol(constituent["symbol"])
+def fetch_stock(constituent: dict, index: str, previous: dict | None = None, min_sessions: int = 60) -> dict:
+    """
+    [previous] is the stock's stored copy (per-date maps): its closes are kept where Yahoo's series
+    is shorter, so a listing Yahoo only quotes day by day (some SME stocks) builds up a history.
+    """
+    yahoo = constituent.get("yahoo") or yahoo_symbol(constituent["symbol"])
     all_daily = fetch_daily(yahoo, "10y")
     today = datetime.now(IST)
     if all_daily and all_daily[-1]["d"] == today.strftime("%Y-%m-%d") and today.hour * 60 + today.minute < 15 * 60 + 35:
         all_daily = all_daily[:-1]
-    if len(all_daily) < 60:
-        raise ValueError(f"insufficient history ({len(all_daily)} sessions)")
+    daily = {**((previous or {}).get("_daily") or {}), **{b["d"]: b["c"] for b in all_daily}}
+    monthly = {**((previous or {}).get("_monthly") or {}), **{m["d"]: m["c"] for m in monthly_from_daily(all_daily)}}
+    if len(daily) < min_sessions:
+        raise ValueError(f"insufficient history ({len(daily)} sessions)")
     time.sleep(0.3)
     return {
         "symbol": constituent["symbol"],
@@ -516,8 +526,8 @@ def fetch_stock(constituent: dict, index: str) -> dict:
         "index": index,
         "source": "yahoo:" + yahoo,
         # Expanded to the shared calendars in fetch_stocks().
-        "_monthly": {m["d"]: m["c"] for m in monthly_from_daily(all_daily)},
-        "_daily": {b["d"]: b["c"] for b in all_daily[-STOCK_SESSIONS - 20:]},
+        "_monthly": monthly,
+        "_daily": {d: daily[d] for d in sorted(daily)[-STOCK_SESSIONS - 20:]},
         "fundamentals": fetch_fundamentals(yahoo),
     }
 
@@ -546,7 +556,10 @@ def fetch_stocks(universes: list[dict], previous: dict | None, failures: list[st
         for c in u["constituents"]:
             print(f"fetching stock {c['symbol']} ({u['index']})")
             try:
-                items.append(fetch_stock(c, u["index"]))
+                # Only repo-kept lists (minSessions set) build on stored closes; index lists take Yahoo's series as is.
+                keep = "minSessions" in u and c["symbol"] in before
+                prev = _expand(before[c["symbol"]], [], []) if keep else None
+                items.append(fetch_stock(c, u["index"], prev, u.get("minSessions", 60)))
             except Exception as e:  # keep the last good copy of a failing stock
                 failures.append("stock:" + c["symbol"])
                 print(f"  FAILED {c['symbol']}: {e}", file=sys.stderr)

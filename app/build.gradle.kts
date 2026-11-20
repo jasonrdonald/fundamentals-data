@@ -104,3 +104,8 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.turbine)
 }
+
+// PublishedDatasetTest reads the published dataset: rerun the tests when it changes, not only the code.
+tasks.withType<Test>().configureEach {
+    inputs.dir(rootProject.file("shared-data/v4")).withPropertyName("publishedDataset").optional()
+}
