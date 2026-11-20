@@ -38,7 +38,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.fundamentalanalysis.app.domain.analysis.HoldingFilter
 import com.fundamentalanalysis.app.domain.analysis.SectorPerformance
+import com.fundamentalanalysis.app.domain.model.Position
 import com.fundamentalanalysis.app.domain.analysis.StockReports
 import com.fundamentalanalysis.app.domain.model.AnalyzedStock
 import com.fundamentalanalysis.app.domain.model.Period
@@ -96,6 +98,28 @@ fun StocksScreen(
                         label = { Text("${u.name} (${u.size})") },
                     )
                 }
+                if (state.portfolioSize > 0 && ui.shows(UiComponent.STOCKS_PORTFOLIO)) item(key = PORTFOLIO_UNIVERSE) {
+                    FilterChip(
+                        selected = state.isPortfolio,
+                        onClick = { viewModel.onUniverse(PORTFOLIO_UNIVERSE) },
+                        label = { Text("Portfolio (${state.portfolioSize})") },
+                    )
+                }
+            }
+            if (state.isPortfolio) {
+                // Which holdings: all stocks, one index's, or those outside the tracked indices.
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                ) {
+                    items(HoldingFilter.entries) { f ->
+                        FilterChip(
+                            selected = sel.holdings == f,
+                            onClick = { viewModel.onHoldings(f) },
+                            label = { Text("${f.label} (${state.holdingCounts[f] ?: 0})") },
+                        )
+                    }
+                }
             }
             // Scrollable tabs: four views do not fit as segmented buttons on a phone.
             androidx.compose.material3.SecondaryScrollableTabRow(
@@ -112,6 +136,12 @@ fun StocksScreen(
             }
             when {
                 state.loading -> LoadingState()
+                state.isPortfolio && sel.tab == StocksTab.ALL -> HoldingsView(state, viewModel, onOpenStock)
+                state.isPortfolio && state.all.isEmpty() -> EmptyState(
+                    if ((state.holdingCounts[sel.holdings] ?: 0) == 0) "No ${sel.holdings.label} stocks in your portfolio."
+                    else "No market data for these holdings yet. Stocks outside the dataset are fetched on this " +
+                        "phone from Yahoo Finance when it's online. The All stocks tab lists them with their value and P&L.",
+                )
                 state.all.isEmpty() && sel.query.isEmpty() -> EmptyState("No constituent data in the current dataset.")
                 sel.tab == StocksTab.SECTORS -> SectorsView(state, viewModel, onOpenStock)
                 sel.tab == StocksTab.RANKINGS -> RankingsView(state, viewModel, onOpenStock)
@@ -136,10 +166,13 @@ private fun SectorsView(state: StocksUiState, viewModel: StocksViewModel, onOpen
     val period = state.selection.period
     LazyColumn(contentPadding = PaddingValues(bottom = 16.dp), modifier = Modifier.fillMaxSize()) {
         item { PeriodChips(period) { viewModel.onPeriod(it) } }
+        if (state.unanalysed > 0) item { LeftOutNote(state.unanalysed) }
         item {
             SectionCard(
-                "Beat the ${state.indexName}: ${state.totalOutperformers} of ${state.totalMeasured} stocks",
-                subtitle = "${period.label} return · index ${Fmt.signedPercent(state.benchmarkReturn)} · " +
+                "Beat ${state.beatLabel}: ${state.totalOutperformers} of ${state.totalMeasured} stocks",
+                subtitle = "${period.label} return · " +
+                    (state.benchmarkReturn?.let { "index ${Fmt.signedPercent(it)} · " }
+                        ?: "each stock vs the index it belongs to (Nifty 500 for stocks outside them) · ") +
                     "sectors ordered by share of stocks that beat it",
                 modifier = Modifier.padding(horizontal = 16.dp),
             ) {
@@ -166,7 +199,9 @@ private fun SectorsView(state: StocksUiState, viewModel: StocksViewModel, onOpen
 private fun SectorCard(s: SectorPerformance, period: Period, onOpenStock: (String) -> Unit) {
     SectionCard(
         s.sector,
-        subtitle = "${s.outperformers} of ${s.measured} beat the index (${Fmt.signedPercent(s.benchmarkReturn)}) · sector avg ${Fmt.signedPercent(s.averageReturn)}",
+        subtitle = "${s.outperformers} of ${s.measured} beat " +
+            (s.benchmarkReturn?.let { "the index (${Fmt.signedPercent(it)})" } ?: "their own index") +
+            " · sector avg ${Fmt.signedPercent(s.averageReturn)}",
         modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp),
     ) {
         Row(Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
@@ -227,6 +262,7 @@ private fun RankingsView(state: StocksUiState, viewModel: StocksViewModel, onOpe
                 }
             }
         }
+        if (state.unanalysed > 0) item { LeftOutNote(state.unanalysed) }
         item {
             Text(
                 "${factor.label}: ${factor.description}. " + if (sel.top) "Best first." else "Weakest first.",
@@ -272,6 +308,89 @@ private fun RankingsView(state: StocksUiState, viewModel: StocksViewModel, onOpe
                     }
                 }
             }
+        }
+    }
+}
+
+/** Portfolio universe: holdings outside the tracked indices aren't in the analysis. */
+@Composable
+internal fun LeftOutNote(count: Int) {
+    Text(
+        "$count ${if (count == 1) "holding has" else "holdings have"} no market data yet and " +
+            "${if (count == 1) "isn't" else "aren't"} included here. Stocks outside the dataset are fetched on this phone " +
+            "from Yahoo Finance when it's online. See All stocks.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+    )
+}
+
+// ---------------------------------------------------------------- Portfolio holdings
+
+@Composable
+private fun HoldingsView(state: StocksUiState, viewModel: StocksViewModel, onOpenStock: (String) -> Unit) {
+    val rows = state.holdings
+    val value = rows.sumOf { it.value }
+    val invested = rows.sumOf { it.invested }
+    val costed = rows.sumOf { it.costedValue }
+    // Day move of the holdings with one: gain over their value before it.
+    val day = rows.mapNotNull { p -> p.dayChange?.let { p to it } }
+    val dayGain = day.sumOf { it.second }
+    val dayStart = day.sumOf { (p, g) -> p.value - g }
+    Column {
+        OutlinedTextField(
+            value = state.selection.query,
+            onValueChange = viewModel::onQuery,
+            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+            placeholder = { Text("Search symbol, company or sector") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+        )
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "${rows.size} holdings · ${Fmt.inr(value)}",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            if (dayStart > 0) ChangeText("1D " + Fmt.signedPercent(dayGain / dayStart), dayGain, style = MaterialTheme.typography.labelMedium)
+            if (invested > 0) {
+                if (dayStart > 0) Text("  ·  ", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                ChangeText("P&L " + Fmt.signedPercent(costed / invested - 1), costed - invested, style = MaterialTheme.typography.labelMedium)
+            }
+        }
+        LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
+            items(rows, key = { it.symbol }) { p ->
+                HoldingStockRow(p, onClick = { onOpenStock(p.symbol) })
+                HorizontalDivider()
+            }
+        }
+    }
+}
+
+@Composable
+private fun HoldingStockRow(p: Position, onClick: () -> Unit) {
+    val tracked = p.tracked
+    Row(
+        Modifier.fillMaxWidth().then(if (tracked != null) Modifier.clickable(onClick = onClick) else Modifier).padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(p.symbol, style = MaterialTheme.typography.titleSmall)
+            Text(
+                listOfNotNull(tracked?.stock?.name, p.sector.takeIf { it.isNotBlank() }).joinToString(" · "),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+            tracked?.metrics?.returns?.get(Period.Y1)?.let { r ->
+                ChangeText("1Y " + Fmt.signedPercent(r), r, style = MaterialTheme.typography.labelSmall)
+            }
+        }
+        Column(horizontalAlignment = Alignment.End) {
+            Text(Fmt.inr(p.value), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+            tracked?.metrics?.change1d?.let { ChangeText("1D " + Fmt.signedPercent(it), it, style = MaterialTheme.typography.labelMedium) }
+            p.pnlPct?.let { ChangeText("P&L " + Fmt.signedPercent(it), it, style = MaterialTheme.typography.labelSmall) }
         }
     }
 }

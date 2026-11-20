@@ -49,6 +49,7 @@ import javax.inject.Inject
 class StartupViewModel @Inject constructor(
     repository: MarketRepository,
     settings: SettingsRepository,
+    holdingStocks: com.fundamentalanalysis.app.domain.usecase.SyncHoldingStocksUseCase,
 ) : ViewModel() {
     private val _ready = MutableStateFlow(false)
     val ready: StateFlow<Boolean> = _ready.asStateFlow()
@@ -62,6 +63,8 @@ class StartupViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.Eagerly, com.fundamentalanalysis.app.domain.model.UiLayout())
 
     init {
+        // Portfolio stocks the dataset lacks are fetched on the device once the app is up.
+        viewModelScope.launch { holdingStocks.run() }
         viewModelScope.launch {
             try {
                 // Recent data + precomputed analytics: instant once stored, well under a second on first launch.

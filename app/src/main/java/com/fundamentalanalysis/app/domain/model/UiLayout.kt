@@ -78,6 +78,7 @@ enum class UiComponent(
     STOCKS_RANKINGS(UiPage.STOCKS, "Rankings tab", "Top and bottom stocks by factor"),
     STOCKS_DISTRIBUTION(UiPage.STOCKS, "Distribution tab", "Spread of returns against a normal curve"),
     STOCKS_ALL(UiPage.STOCKS, "All stocks tab", "Searchable list of every constituent"),
+    STOCKS_PORTFOLIO(UiPage.STOCKS, "Portfolio chip", "Analyse your stock holdings like an index's constituents"),
 
     // Compare
     COMPARE_RELATIVE(UiPage.COMPARE, "Relative performance", "Selected indices rebased to 100"),

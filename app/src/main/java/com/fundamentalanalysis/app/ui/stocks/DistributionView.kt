@@ -50,6 +50,7 @@ internal fun DistributionView(state: StocksUiState, onPeriod: (Period) -> Unit, 
                 items(SECTOR_PERIODS) { p -> FilterChip(period == p, onClick = { onPeriod(p) }, label = { Text(p.label) }) }
             }
         }
+        if (state.unanalysed > 0) item { LeftOutNote(state.unanalysed) }
         if (stats == null) {
             item { EmptyState("Not enough stocks report a ${period.label} return to draw a distribution.") }
             return@LazyColumn
@@ -63,7 +64,7 @@ internal fun DistributionView(state: StocksUiState, onPeriod: (Period) -> Unit, 
                 DistributionChart(stats, benchmarkLabel = "Index")
             }
         }
-        item { ShapeCard(stats, state.indexName, period, Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp)) }
+        item { ShapeCard(stats, state.benchmarkName.ifBlank { state.indexName }, period, Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp)) }
         item { BandsCard(stats, Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp)) }
         item { StockListCard(state.distributionRows, stats, period, onOpenStock, Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp)) }
     }

@@ -288,7 +288,7 @@ private fun SummaryCard(s: PortfolioSummary, period: ReturnPeriod, modifier: Mod
                 KeyValueRow("No recorded cost (not in P&L)", "${Fmt.inr(s.uncostedValue)} · ${s.uncostedHoldings} holdings")
             }
             s.dayChange?.let { KeyValueRow("Latest session (tracked stocks)", Fmt.inr(it, signed = true), valueColor = changeColor(it)) }
-            KeyValueRow("Holdings", "${s.positions.size} · ${s.trackedCount} in tracked indices")
+            KeyValueRow("Holdings", "${s.positions.size} · ${s.trackedCount} with market data")
         }
         val brokerDates = s.accounts.mapNotNull { a -> a.holdingsAsOf?.let { "${a.broker} ${Fmt.day(it)}" } }
         Text(
@@ -405,8 +405,9 @@ private fun VsIndexCards(s: PortfolioSummary, onOpenStock: (String) -> Unit, sta
         val chosenName = state.benchmarks.firstOrNull { it.first == state.benchmark }?.second
         SectionCard(
             "All tracked holdings",
-            subtitle = "${s.trackedCount} of ${s.positions.size} holdings are Nifty 50, Next 50 or Midcap 150 stocks; " +
-                if (chosenName == null) "each is compared with its own index" else "all are compared with the $chosenName",
+            subtitle = "${s.trackedCount} of ${s.positions.size} holdings have market data; " +
+                if (chosenName == null) "each is compared with its own index (the Nifty 500 for stocks outside the tracked indices)"
+                else "all are compared with the $chosenName",
         ) {
             Text("Compare with", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)) {

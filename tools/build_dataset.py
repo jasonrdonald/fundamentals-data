@@ -149,6 +149,8 @@ def monthly_from_daily(daily: list[dict]) -> list[dict]:
 
 
 def fetch_index(spec: dict, previous: dict | None) -> dict:
+    if spec.get("nse"):
+        return fetch_index_nse(spec, previous)
     full = bool(spec.get("fullHistory"))
     all_daily = fetch_daily(spec["yahoo"], "all" if full else "10y")
     # A bar dated today while the market is still open is incomplete: drop it.
@@ -182,25 +184,122 @@ def fetch_index(spec: dict, previous: dict | None) -> dict:
 NSE_DAILY_URL = "https://archives.nseindia.com/content/indices/ind_close_all_{ddmmyyyy}.csv"
 
 
-def nse_index_row(day: date, names: list[str]) -> dict | None:
-    url = NSE_DAILY_URL.format(ddmmyyyy=day.strftime("%d%m%Y"))
-    try:
-        text = http_get(url, attempts=2).decode("utf-8-sig", errors="replace")
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
-            return None  # holiday / weekend: no file
-        raise
+_NSE_DAY_CACHE: dict[date, list[dict] | None] = {}
+
+
+def nse_day_rows(day: date) -> list[dict] | None:
+    """Every index's row in NSE's archive for `day` (None on holidays / weekends). Cached per run."""
+    if day not in _NSE_DAY_CACHE:
+        url = NSE_DAILY_URL.format(ddmmyyyy=day.strftime("%d%m%Y"))
+        try:
+            text = http_get(url, attempts=2).decode("utf-8-sig", errors="replace")
+            _NSE_DAY_CACHE[day] = list(csv.DictReader(io.StringIO(text)))
+        except urllib.error.HTTPError as e:
+            if e.code != 404:
+                raise
+            _NSE_DAY_CACHE[day] = None  # holiday / weekend: no file
+        time.sleep(0.2)
+    return _NSE_DAY_CACHE[day]
+
+
+def _nse_row(day: date, names: list[str]) -> dict | None:
     wanted = {n.lower() for n in names}
-    for row in csv.DictReader(io.StringIO(text)):
+    for row in nse_day_rows(day) or []:
         if (row.get("Index Name") or "").strip().lower() in wanted:
-            def num(key: str) -> float | None:
-                try:
-                    v = float((row.get(key) or "").strip())
-                    return v if v > 0 else None
-                except ValueError:
-                    return None
-            return {"d": day.isoformat(), "pe": num("P/E"), "pb": num("P/B"), "dy": num("Div Yield")}
+            return row
     return None
+
+
+def _num(row: dict, key: str) -> float | None:
+    try:
+        v = float((row.get(key) or "").strip())
+        return v if v > 0 else None
+    except ValueError:
+        return None
+
+
+def nse_index_row(day: date, names: list[str]) -> dict | None:
+    row = _nse_row(day, names)
+    if row is None:
+        return None
+    return {"d": day.isoformat(), "pe": _num(row, "P/E"), "pb": _num(row, "P/B"), "dy": _num(row, "Div Yield")}
+
+
+def nse_bar(day: date, names: list[str]) -> dict | None:
+    """One session's OHLCV bar from NSE's archive. Older files print "-" for open/high/low."""
+    row = _nse_row(day, names)
+    c = _num(row, "Closing Index Value") if row else None
+    if c is None:
+        return None
+    o = _num(row, "Open Index Value") or c
+    h = _num(row, "High Index Value") or max(o, c)
+    l = _num(row, "Low Index Value") or min(o, c)
+    v = _num(row, "Volume")
+    return {"d": day.isoformat(), "o": round(o, 2), "h": round(h, 2), "l": round(l, 2), "c": round(c, 2),
+            "v": int(v) if v else None}
+
+
+def fetch_index_nse(spec: dict, previous: dict | None) -> dict:
+    """
+    An index Yahoo has no history for, built from NSE's daily archive: the stored series plus the
+    sessions since. The first run backfills DAILY_BARS sessions, and month ends before them, where
+    a month's bar has only its closing value (open = previous month's close).
+    """
+    names = spec["nse"]
+    today = datetime.now(IST).date()
+    prev_daily = (previous or {}).get("daily") or []
+    by_day = {b["d"]: b for b in prev_daily}
+    start = date.fromisoformat(prev_daily[-1]["d"]) + timedelta(days=1) if prev_daily \
+        else today - timedelta(days=int(DAILY_BARS * 1.5))
+    day = start
+    while day <= today:
+        if day.weekday() < 5:
+            b = nse_bar(day, names)
+            if b:
+                by_day[b["d"]] = b
+        day += timedelta(days=1)
+    daily = [by_day[d] for d in sorted(by_day)][-DAILY_BARS:]
+    if len(daily) < 30:
+        raise ValueError(f"insufficient history ({len(daily)} daily)")
+
+    by_month = {m["d"][:7]: m for m in (previous or {}).get("monthly") or []}
+    recent = monthly_from_daily(daily)
+    for m in recent[1:]:  # the window's first month is usually partial
+        by_month[m["d"][:7]] = m
+    first = date.fromisoformat(recent[0]["d"])
+    y, mo = first.year, first.month
+    for _ in range(MONTHLY_BARS):
+        y, mo = (y - 1, 12) if mo == 1 else (y, mo - 1)
+        key = f"{y:04d}-{mo:02d}"
+        if key in by_month:
+            continue
+        last = date(y + (mo == 12), mo % 12 + 1, 1) - timedelta(days=1)
+        bar = None
+        for back in range(12):
+            d = last - timedelta(days=back)
+            if d.weekday() < 5 and (bar := nse_bar(d, names)):
+                break
+        if bar is None:
+            break  # before the index existed
+        by_month[key] = {"d": key + "-01", "o": bar["c"], "h": bar["c"], "l": bar["c"], "c": bar["c"],
+                         "v": None, "sessions": None, "last": bar["d"]}
+    monthly = [by_month[k] for k in sorted(by_month)]
+    # Month-end-only bars open at the previous month's close.
+    for a, b in zip(monthly, monthly[1:]):
+        if b.get("sessions") is None:
+            b["o"] = a["c"]
+            b["h"], b["l"] = max(b["o"], b["c"]), min(b["o"], b["c"])
+    monthly = [m if m.get("sessions") is not None else {**m, "sessions": 0} for m in monthly][-MONTHLY_BARS:]
+    if len(monthly) < 12:
+        raise ValueError(f"insufficient history ({len(monthly)} monthly)")
+    return {
+        "symbol": spec["symbol"],
+        "name": spec["name"],
+        "category": spec["category"],
+        "source": "nse:ind_close_all",
+        "daily": daily,
+        "monthly": monthly,
+    }
 
 
 def month_end_row(year: int, month: int, names: list[str], not_after: date) -> dict | None:
@@ -212,7 +311,6 @@ def month_end_row(year: int, month: int, names: list[str], not_after: date) -> d
             return None
         if day.weekday() < 5:
             row = nse_index_row(day, names)
-            time.sleep(0.25)
             if row:
                 return row
         day -= timedelta(days=1)
@@ -248,7 +346,8 @@ def fetch_constituents(cfg: dict) -> dict:
     rows = list(csv.DictReader(io.StringIO(text)))
     constituents = [
         {"symbol": r["Symbol"].strip(), "name": r["Company Name"].strip(), "industry": r["Industry"].strip()}
-        for r in rows if r.get("Symbol")
+        # NSE lists placeholder rows ("DUMMY...") for pending index changes; they have no prices.
+        for r in rows if r.get("Symbol") and not r["Symbol"].strip().upper().startswith("DUMMY")
     ]
     if len(constituents) < 20:
         raise ValueError(f"unexpected constituent count {len(constituents)}")
@@ -284,7 +383,7 @@ def build(config: dict, existing: dict | None) -> dict:
     previous = {i["symbol"]: i for i in (existing or {}).get("indices", [])}
     indices, failures = [], []
     for spec in config["indices"]:
-        print(f"fetching {spec['symbol']} ({spec['yahoo']})")
+        print(f"fetching {spec['symbol']} ({spec.get('yahoo') or 'NSE archive'})")
         try:
             indices.append(fetch_index(spec, previous.get(spec["symbol"])))
         except Exception as e:  # keep the last good copy of a single failing index

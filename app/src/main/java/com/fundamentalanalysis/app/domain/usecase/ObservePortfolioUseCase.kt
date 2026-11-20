@@ -24,9 +24,13 @@ class ObservePortfolioUseCase @Inject constructor(
 ) {
     /** [broker] limits the summary to one broker's accounts (null = all). */
     operator fun invoke(broker: Flow<String?> = flowOf(null)): Flow<PortfolioSummary?> =
-        combine(portfolio.observePortfolio(), stocks(), broker, market.observeIndices()) { data, analyzed, b, indices ->
+        combine(portfolio.observePortfolio(), stocks(), stocks.holdings(), broker, market.observeIndices()) { data, analyzed, held, b, indices ->
             if (data.isEmpty) null
-            else PortfolioAnalytics.summarize(data.forBroker(b), analyzed.associateBy { it.symbol }, indices.firstOrNull { it.symbol == BENCHMARK })
+            else PortfolioAnalytics.summarize(
+                data.forBroker(b),
+                held.associateBy { it.symbol } + analyzed.associateBy { it.symbol },
+                indices.firstOrNull { it.symbol == BENCHMARK },
+            )
         }.flowOn(dispatcher)
 
     private companion object {

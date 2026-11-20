@@ -140,4 +140,5 @@ abstract class BindingsModule {
     @Binds abstract fun settingsRepository(impl: com.fundamentalanalysis.app.data.local.SettingsPreferences): com.fundamentalanalysis.app.domain.repository.SettingsRepository
     @Binds abstract fun remoteDatasetSource(impl: HttpRemoteDatasetSource): RemoteDatasetSource
     @Binds abstract fun seedDatasetSource(impl: AssetSeedDatasetSource): SeedDatasetSource
+    @Binds abstract fun holdingStocksRepository(impl: com.fundamentalanalysis.app.data.portfolio.LocalHoldingStocksRepository): com.fundamentalanalysis.app.domain.repository.HoldingStocksRepository
 }
