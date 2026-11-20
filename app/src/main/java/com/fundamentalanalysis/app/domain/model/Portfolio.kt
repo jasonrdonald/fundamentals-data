@@ -181,8 +181,6 @@ enum class IndexGroup(val label: String, val indexSymbol: String?) {
     NIFTY_50("Nifty 50", "NIFTY 50"),
     NEXT_50("Nifty Next 50", "NIFTY NEXT 50"),
     MIDCAP_150("Nifty Midcap 150", "NIFTY MIDCAP 150"),
-    SMALLCAP_250("Nifty Smallcap 250", "NIFTY SMALLCAP 250"),
-    MICROCAP_250("Nifty Microcap 250", "NIFTY MICROCAP 250"),
     OTHER("Other stocks", null),
     FUNDS("Funds & ETFs", null);
 

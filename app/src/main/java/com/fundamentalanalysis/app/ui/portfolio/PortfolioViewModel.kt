@@ -170,7 +170,7 @@ class PortfolioViewModel @Inject constructor(
         const val KEY_BENCHMARK = "portfolio_benchmark"
         const val KEY_PERIOD = "portfolio_period"
         const val KEY_DETAILS = "portfolio_details"
-        val BENCHMARK_ORDER = listOf("NIFTY 50", "NIFTY NEXT 50", "NIFTY MIDCAP 150", "NIFTY SMALLCAP 250", "NIFTY MICROCAP 250", "NIFTY 500")
+        val BENCHMARK_ORDER = listOf("NIFTY 50", "NIFTY NEXT 50", "NIFTY MIDCAP 150", "NIFTY 500")
     }
 }
 

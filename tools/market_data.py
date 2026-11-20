@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DIR = ROOT / "shared-data" / "v4"
 
 #: Universes with constituent stocks, in display order.
-UNIVERSES = ["NIFTY 50", "NIFTY NEXT 50", "NIFTY MIDCAP 150", "NIFTY SMALLCAP 250", "NIFTY MICROCAP 250"]
+UNIVERSES = ["NIFTY 50", "NIFTY NEXT 50", "NIFTY MIDCAP 150", "WATCHLIST"]
 INDEX_PERIODS = ["D1", "W1", "M1", "M3", "M6", "YTD", "Y1", "Y3", "Y5"]
 STOCK_PERIODS = ["W1", "M1", "M3", "M6", "YTD", "Y1", "Y3"]
 PERIOD_LABELS = {"D1": "1D", "W1": "1W", "M1": "1M", "M3": "3M", "M6": "6M", "YTD": "YTD",

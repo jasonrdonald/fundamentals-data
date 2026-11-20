@@ -59,15 +59,23 @@ class ObserveAnalyzedStocksUseCase @Inject constructor(
         combine(market.observeStock(symbol), precomputed, market.observeIndices(), holdings) { stock, pre, indices, held ->
             stock ?: return@combine held.firstOrNull { it.symbol == symbol }
             val metrics = pre.stocks[symbol]
-                ?: StockAnalyticsCalculator.calculate(stock, indices.firstOrNull { it.symbol == stock.indexSymbol })
+                ?: StockAnalyticsCalculator.calculate(stock, indices.firstOrNull { it.symbol == benchmarkOf(stock.indexSymbol) })
             AnalyzedStock(stock, metrics)
         }.flowOn(dispatcher).distinctUntilChanged()
 
     companion object {
         /** Display order of stock universes. */
-        val UNIVERSE_ORDER = listOf("NIFTY 50", "NIFTY NEXT 50", "NIFTY MIDCAP 150", "NIFTY SMALLCAP 250", "NIFTY MICROCAP 250")
+        val UNIVERSE_ORDER = listOf("NIFTY 50", "NIFTY NEXT 50", "NIFTY MIDCAP 150", WATCHLIST)
 
-        /** Benchmark for portfolio stocks outside the tracked indices. */
+        /** The dataset's watchlist universe: stocks outside the indices above, kept in tools/watchlist.csv. */
+        const val WATCHLIST = "WATCHLIST"
+        const val WATCHLIST_NAME = "Watchlist"
+
+        /** Benchmark for the watchlist and for stocks fetched on the device (tools/indices.json says the same). */
         const val HOLDING_BENCHMARK = "NIFTY 500"
+
+        /** The index a stock of universe [indexSymbol] is measured against. */
+        fun benchmarkOf(indexSymbol: String): String =
+            if (indexSymbol.isEmpty() || indexSymbol == WATCHLIST) HOLDING_BENCHMARK else indexSymbol
     }
 }

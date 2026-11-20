@@ -5,6 +5,7 @@ import com.fundamentalanalysis.app.domain.model.HoldingKind
 import com.fundamentalanalysis.app.domain.model.IndexGroup
 import com.fundamentalanalysis.app.domain.model.Period
 import com.fundamentalanalysis.app.domain.model.Position
+import com.fundamentalanalysis.app.domain.usecase.ObserveAnalyzedStocksUseCase
 
 /** Which of the portfolio's stock holdings to analyse on the Stocks page. Funds and ETFs are never included. */
 enum class HoldingFilter(val label: String, val group: IndexGroup?) {
@@ -12,8 +13,6 @@ enum class HoldingFilter(val label: String, val group: IndexGroup?) {
     NIFTY_50("Nifty 50", IndexGroup.NIFTY_50),
     NEXT_50("Next 50", IndexGroup.NEXT_50),
     MIDCAP_150("Midcap 150", IndexGroup.MIDCAP_150),
-    SMALLCAP_250("Smallcap 250", IndexGroup.SMALLCAP_250),
-    MICROCAP_250("Microcap 250", IndexGroup.MICROCAP_250),
     UNCATEGORIZED("Uncategorized", IndexGroup.OTHER),
 }
 
@@ -35,9 +34,10 @@ object PortfolioStocks {
      * the stocks come from more than one index, a sector has no single benchmark return.
      */
     fun sectors(stocks: List<AnalyzedStock>, period: Period): List<SectorPerformance> {
-        val mixed = stocks.map { it.stock.indexSymbol }.distinct().size > 1
+        fun bench(s: AnalyzedStock) = ObserveAnalyzedStocksUseCase.benchmarkOf(s.stock.indexSymbol)
+        val mixed = stocks.map(::bench).distinct().size > 1
         return StockReports.sectorPerformance(stocks, period).map { s ->
-            if (mixed && s.stocks.map { it.stock.indexSymbol }.distinct().size > 1) s.copy(benchmarkReturn = null) else s
+            if (mixed && s.stocks.map(::bench).distinct().size > 1) s.copy(benchmarkReturn = null) else s
         }
     }
 }

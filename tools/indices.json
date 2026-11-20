@@ -38,20 +38,6 @@
       "yahoo": "NIFTYMIDCAP150.NS"
     },
     {
-      "symbol": "NIFTY SMALLCAP 250",
-      "name": "Nifty Smallcap 250",
-      "category": "BROAD",
-      "yahoo": "NIFTYSMLCAP250.NS"
-    },
-    {
-      "symbol": "NIFTY MICROCAP 250",
-      "name": "Nifty Microcap 250",
-      "category": "BROAD",
-      "nse": [
-        "Nifty Microcap 250"
-      ]
-    },
-    {
       "symbol": "NIFTY BANK",
       "name": "Nifty Bank",
       "category": "SECTOR",
@@ -143,7 +129,7 @@
     }
   ],
   "stocks": {
-    "note": "Constituent stocks per index: price history and fundamentals. Each stock is benchmarked against its own index.",
+    "note": "Constituent stocks per index: price history and fundamentals. Each stock is benchmarked against its own index; watchlist stocks against the universe's benchmark.",
     "universes": [
       {
         "index": "NIFTY 50",
@@ -158,12 +144,10 @@
         "url": "https://archives.nseindia.com/content/indices/ind_niftymidcap150list.csv"
       },
       {
-        "index": "NIFTY SMALLCAP 250",
-        "url": "https://archives.nseindia.com/content/indices/ind_niftysmallcap250list.csv"
-      },
-      {
-        "index": "NIFTY MICROCAP 250",
-        "url": "https://archives.nseindia.com/content/indices/ind_niftymicrocap250_list.csv"
+        "index": "WATCHLIST",
+        "name": "Watchlist",
+        "file": "tools/watchlist.csv",
+        "benchmark": "NIFTY 500"
       }
     ]
   }

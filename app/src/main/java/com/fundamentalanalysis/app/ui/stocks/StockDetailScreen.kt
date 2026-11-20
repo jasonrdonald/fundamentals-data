@@ -95,8 +95,7 @@ class StockDetailViewModel @Inject constructor(
         combine(observeStocks.one(symbol), market.observeIndices(), market.observeAvailability()) { stock, indices, availability ->
             if (stock == null) StockDetailUiState.NotFound
             else {
-                // Portfolio stocks outside the tracked indices are measured against the Nifty 500.
-                val bench = stock.stock.indexSymbol.ifEmpty { com.fundamentalanalysis.app.domain.usecase.ObserveAnalyzedStocksUseCase.HOLDING_BENCHMARK }
+                val bench = com.fundamentalanalysis.app.domain.usecase.ObserveAnalyzedStocksUseCase.benchmarkOf(stock.stock.indexSymbol)
                 StockDetailUiState.Ready(stock, indices.firstOrNull { it.symbol == bench }, availability.historyReady)
             }
         }.flowOn(kotlinx.coroutines.Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StockDetailUiState.Loading)

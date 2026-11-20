@@ -342,21 +342,30 @@ def fetch_valuation(cfg: dict, previous: list[dict], latest_session: str) -> lis
 
 
 def fetch_constituents(cfg: dict) -> dict:
-    text = http_get(cfg["url"]).decode("utf-8-sig")
+    """An NSE index list ("url") or a list kept in this repo ("file"), same columns."""
+    if cfg.get("file"):
+        text = (ROOT / cfg["file"]).read_text(encoding="utf-8-sig")
+    else:
+        text = http_get(cfg["url"]).decode("utf-8-sig")
     rows = list(csv.DictReader(io.StringIO(text)))
     constituents = [
         {"symbol": r["Symbol"].strip(), "name": r["Company Name"].strip(), "industry": r["Industry"].strip()}
         # NSE lists placeholder rows ("DUMMY...") for pending index changes; they have no prices.
         for r in rows if r.get("Symbol") and not r["Symbol"].strip().upper().startswith("DUMMY")
     ]
-    if len(constituents) < 20:
+    if len(constituents) < (1 if cfg.get("file") else 20):
         raise ValueError(f"unexpected constituent count {len(constituents)}")
-    return {
+    out = {
         "index": cfg["index"],
         "asOf": datetime.now(IST).strftime("%Y-%m-%d"),
-        "source": cfg["url"],
+        "source": cfg.get("url") or cfg["file"],
         "constituents": sorted(constituents, key=lambda c: c["symbol"]),
     }
+    # A universe that is not itself an index (the watchlist) names the index it is measured against.
+    for key in ("name", "benchmark"):
+        if cfg.get(key):
+            out[key] = cfg[key]
+    return out
 
 
 def load_existing(path: Path) -> dict | None:

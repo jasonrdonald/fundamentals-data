@@ -384,11 +384,14 @@ def build_parts(ds: dict) -> dict[str, dict]:
     months, sessions, items = stocks["months"], stocks["sessions"], stocks["items"]
     as_of = ds.get("updatedAt")
 
+    # Each universe is measured against its own index, or the benchmark it names (the watchlist).
+    bench_of = {u["index"]: u.get("benchmark") or u["index"] for u in ds.get("universes") or []}
     benchmarks = {}
     for universe in sorted({s["index"] for s in items}):
-        ix = by_symbol.get(universe)
+        ix = by_symbol.get(bench_of.get(universe, universe))
         benchmarks[universe] = {p: rnd(period_return(ix["daily"], ix["monthly"], p)) if ix else None for p in STOCK_PERIODS}
-    metrics = {s["symbol"]: stock_metrics(s, months, sessions, by_symbol.get(s["index"])) for s in items}
+    metrics = {s["symbol"]: stock_metrics(s, months, sessions, by_symbol.get(bench_of.get(s["index"], s["index"])))
+               for s in items}
 
     calendars = []
     for ix in indices:

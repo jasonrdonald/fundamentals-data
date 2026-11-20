@@ -171,7 +171,7 @@ class PublishedDatasetTest {
         analytics.stocks.forEach { dto ->
             val stock = stocks.first { it.symbol == dto.symbol }
             val pre: StockMetrics = dto.toDomain(benchmarks[dto.index])
-            val k = StockAnalyticsCalculator.calculate(stock, byIndex[stock.indexSymbol])
+            val k = StockAnalyticsCalculator.calculate(stock, byIndex[com.fundamentalanalysis.app.domain.usecase.ObserveAnalyzedStocksUseCase.benchmarkOf(stock.indexSymbol)])
             val s = dto.symbol
             assertEquals("$s benchmark", stock.indexSymbol, dto.index)
             near("$s last", k.lastClose, pre.lastClose); assertEquals("$s date", k.lastDate, pre.lastDate)

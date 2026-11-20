@@ -74,4 +74,16 @@ class PortfolioStocksTest {
         val nifty = PortfolioStocks.sectors(PortfolioStocks.analysed(PortfolioStocks.holdings(positions, HoldingFilter.NIFTY_50)), Period.Y1)
         assertEquals(0.10, nifty.first().benchmarkReturn!!, 1e-12)
     }
+
+    @Test fun `watchlist stocks and device-fetched stocks share the Nifty 500 benchmark`() {
+        val w = stock("W", "WATCHLIST", "IT", 0.30, 0.12)
+        val d = stock("D", "", "IT", 0.05, 0.12)
+        val other = PortfolioStocks.holdings(listOf(
+            position("W", HoldingKind.STOCK, 100.0, w), position("D", HoldingKind.STOCK, 50.0, d),
+        ), HoldingFilter.UNCATEGORIZED)
+        assertEquals(listOf("W", "D"), other.map { it.symbol })
+        val it = PortfolioStocks.sectors(PortfolioStocks.analysed(other), Period.Y1).single()
+        assertEquals(0.12, it.benchmarkReturn!!, 1e-12)
+        assertEquals(1, it.outperformers)
+    }
 }
