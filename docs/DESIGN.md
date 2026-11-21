@@ -76,7 +76,7 @@ Stocks are collected only for those four lists (about 300). The sectoral indices
 **How the daily mode works** (per index and per stock):
 
 1. Pick the shortest Yahoo range that reaches back to the last stored session: `5d`, `1mo` or `3mo`. If the last run was more than ~80 days ago, download in full.
-2. Compare the fresh closes with the stored closes for the sessions both have. A difference over 0.5% means the history was restated (a 1:10 bonus is −9%, a 1:1 split −50%), so that symbol is re-downloaded in full; its stored fundamentals are kept.
+2. Compare the fresh closes with the stored closes for the sessions both have. A difference over 0.5% means the history was restated (a 1:10 bonus is −9%, a 1:1 split −50%), so that symbol is re-downloaded in full; its stored fundamentals are kept. The most recent stored session is allowed 5%, because it often came from Yahoo's provisional end-of-day price, which can move once the close is final.
 3. Otherwise append the new sessions, recompute the months they fall in, and trim to the kept window (indices: 300 sessions, 72 months; stocks: 260 sessions, 121 months; Nifty 50: full monthly history).
 4. Symbols with no stored copy are downloaded in full, with fundamentals.
 

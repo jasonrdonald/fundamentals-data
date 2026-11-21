@@ -44,6 +44,9 @@ MODES = ("daily", "weekly", "full")
 # Stored and freshly fetched closes for the same session may differ by Yahoo's rounding or a late
 # correction; a larger gap means the history was restated (split, bonus) and is re-downloaded.
 RESTATE_TOLERANCE = 0.005
+# The last stored session was often taken from Yahoo's provisional end-of-day price, which can move
+# a few percent once the close is final; a split or bonus also shifts every earlier session.
+PROVISIONAL_TOLERANCE = 0.05
 IST = timezone(timedelta(hours=5, minutes=30))
 
 
@@ -166,7 +169,9 @@ def restated(stored: dict[str, float], fresh: dict[str, float]) -> bool | None:
     common = [d for d in fresh if d in stored and stored[d]]
     if not common:
         return None
-    return any(abs(fresh[d] / stored[d] - 1) > RESTATE_TOLERANCE for d in common)
+    last = max(stored)
+    return any(abs(fresh[d] / stored[d] - 1) > (PROVISIONAL_TOLERANCE if d == last else RESTATE_TOLERANCE)
+               for d in common)
 
 
 def monthly_from_daily(daily: list[dict]) -> list[dict]:
