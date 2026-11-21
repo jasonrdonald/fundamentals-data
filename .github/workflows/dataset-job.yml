@@ -1,0 +1,49 @@
+name: Dataset job
+
+# Shared steps for the daily, weekly and monthly dataset workflows. Each caller picks a mode:
+#   daily   recent prices only (incremental; split/bonus restatements trigger a per-stock re-download)
+#   weekly  constituent lists and fundamentals
+#   full    everything re-downloaded, reconciling the stored history with the source
+on:
+  workflow_call:
+    inputs:
+      mode:
+        type: string
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.mode == 'daily' && 15 || 30 }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Build dataset (${{ inputs.mode }})
+        run: python tools/build_dataset.py --mode "${{ inputs.mode }}"
+
+      # Splits the dataset into the parts apps load progressively (analytics, core, history),
+      # precomputes the analysis tables, and records the run in the manifest's timeline.
+      - name: Derive progressive parts and precomputed analytics
+        run: python tools/derive_parts.py
+
+      - name: Commit and push if the data changed
+        env:
+          MODE: ${{ inputs.mode }}
+        run: |
+          if git diff --quiet -- shared-data/ && [ -z "$(git ls-files --others --exclude-standard shared-data/)" ]; then
+            echo "No data changes."
+            exit 0
+          fi
+          summary=$(python -c "import json; m=json.load(open('shared-data/v4/manifest.json')); print(f\"v{m['version']} (dataset v{m['datasetVersion']}) through {m['asOf']}; changed: {', '.join(m['history'][0]['changed'])}\")")
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add shared-data/
+          git commit -m "Update dataset ($MODE) $summary"
+          git push

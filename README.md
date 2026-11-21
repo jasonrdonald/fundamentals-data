@@ -93,7 +93,7 @@ Not included yet:
 ```
 tools/build_dataset.py   pipeline step 1: public sources -> shared-data/dataset.json (stdlib Python)
 tools/derive_parts.py    pipeline step 2: dataset.json -> shared-data/v4/ (parts + precomputed analytics)
-.github/workflows/       runs both every weekday after market close and commits changes
+.github/workflows/       daily prices, weekly fundamentals, monthly full refresh; each commits changes
 shared-data/v4/          what the app downloads: manifest.json, analytics.json, core.json, history.json
 shared-data/dataset.json the full dataset (schemaVersion 3), still read by app versions up to 1.1
 app/                     Android app
@@ -140,9 +140,9 @@ Sources (open endpoints, no login or cookies):
 - **Prices and volume:** Yahoo Finance's chart endpoint, `query1.finance.yahoo.com/v8/finance/chart`. It's unofficial and has no service guarantee, so if it breaks, swap the fetcher in `build_dataset.py`.
 - **Constituents and industries:** NSE's published CSV, `archives.nseindia.com/content/indices/ind_nifty50list.csv`.
 
-Run it locally:
+Run it locally (`--mode` is `daily`, `weekly` or `full`; the default, `full`, downloads everything):
 ```bash
-python tools/build_dataset.py
+python tools/build_dataset.py --mode daily
 ```
 ```bash
 python tools/derive_parts.py
@@ -156,7 +156,15 @@ How the pipeline behaves:
 - It increases `version` only when the data actually changed. The derive step gives each part its own version, so an update that only changes recent prices doesn't make phones download the history again.
 - If a single index fails to download, it keeps the last good copy of that index and lists it under `failures`.
 - It stops without writing anything if the Nifty 50 can't be fetched.
-- [`update-dataset.yml`](.github/workflows/update-dataset.yml) runs both steps at 17:00 IST every weekday and commits any change. You can also start it by hand from the repo's Actions tab, or from the app's Data page.
+- Three scheduled workflows run both steps and commit any change. They share one queue, so two never write the dataset at once:
+
+  | Workflow | Mode | When | What it downloads |
+  |---|---|---|---|
+  | [`update-dataset.yml`](.github/workflows/update-dataset.yml) | `daily` | 22:30 IST, Monday–Friday | Only the last few sessions per index and stock, appended to the stored prices. If a stock's stored closes no longer match Yahoo's (a split or bonus restates its history), that stock is re-downloaded in full. New index members and wishlist stocks are backfilled. |
+  | [`update-fundamentals.yml`](.github/workflows/update-fundamentals.yml) | `weekly` | Saturday 08:30 IST | Constituent lists and every stock's fundamentals. Prices are reused. |
+  | [`refresh-history.yml`](.github/workflows/refresh-history.yml) | `full` | 1st of the month, 08:30 IST | Everything (10 years of prices), replacing the stored copy to pick up any revisions |
+
+  Each can also be started by hand from the repo's Actions tab; the daily one, which the app's Data page links to, lets you pick any mode.
 - Each run that changes something is added to the manifest's `history`, which the app shows as the pipeline timeline.
 
 Check that the published files match what the app expects. This parses them with the app's own decoder, checks sizes and checksums against the manifest, dates, OHLC consistency and history length, and compares every precomputed number with the app's calculators:

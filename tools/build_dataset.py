@@ -8,7 +8,17 @@ Sources (open endpoints, no login, no cookies):
 The dataset holds raw primary data only; the app computes performance, momentum and
 volume analytics from it. Standard library only, so it runs anywhere Python 3.9+ exists.
 
-Usage:  python tools/build_dataset.py [--out shared-data/dataset.json]
+Modes (--mode), each run by its own scheduled workflow:
+  daily   prices only, incrementally: each index and stock asks Yahoo for the last few sessions and
+          appends them to the stored copy. If the overlapping sessions disagree with what is stored
+          (a split or bonus restates a stock's whole history), that one symbol is re-downloaded in
+          full. Symbols with no stored copy (new index members) are backfilled. Fundamentals and
+          constituent lists are reused from the stored copy.
+  weekly  constituent lists and fundamentals; stored prices are reused.
+  full    everything re-downloaded (10 years of prices), reconciling the stored copy with the
+          source. Run monthly, and to build the dataset from scratch.
+
+Usage:  python tools/build_dataset.py [--mode daily|weekly|full] [--out shared-data/dataset.json]
         then python tools/derive_parts.py (parts + precomputed analytics the app reads)
 """
 from __future__ import annotations
@@ -30,6 +40,10 @@ DAILY_BARS = 300      # ~14 months: prev day, 1Y return, 200-DMA, 52-week range
 MONTHLY_BARS = 72     # 6 years of month-on-month data (5 full years + context)
 USER_AGENT = "fundamentals-data-pipeline/1.0 (+https://github.com/jasonrdonald/fundamentals-data)"
 ROOT = Path(__file__).resolve().parent.parent
+MODES = ("daily", "weekly", "full")
+# Stored and freshly fetched closes for the same session may differ by Yahoo's rounding or a late
+# correction; a larger gap means the history was restated (split, bonus) and is re-downloaded.
+RESTATE_TOLERANCE = 0.005
 IST = timezone(timedelta(hours=5, minutes=30))
 
 
@@ -130,6 +144,31 @@ def fetch_daily(yahoo_symbol: str, range_: str = "10y") -> list[dict]:
     return [by_date[d] for d in sorted(by_date)]
 
 
+def drop_open_session(bars: list[dict]) -> list[dict]:
+    """A bar dated today while the market is still open is incomplete: drop it."""
+    today = datetime.now(IST)
+    if bars and bars[-1]["d"] == today.strftime("%Y-%m-%d") and today.hour * 60 + today.minute < 15 * 60 + 35:
+        return bars[:-1]
+    return bars
+
+
+def recent_range(last_stored: str) -> str | None:
+    """The shortest Yahoo range that still overlaps the last stored session; None if too far back."""
+    gap = (datetime.now(IST).date() - date.fromisoformat(last_stored)).days
+    for days, range_ in ((4, "5d"), (25, "1mo"), (80, "3mo")):
+        if gap <= days:
+            return range_
+    return None
+
+
+def restated(stored: dict[str, float], fresh: dict[str, float]) -> bool | None:
+    """True if overlapping closes disagree; None if there is no overlap to compare."""
+    common = [d for d in fresh if d in stored and stored[d]]
+    if not common:
+        return None
+    return any(abs(fresh[d] / stored[d] - 1) > RESTATE_TOLERANCE for d in common)
+
+
 def monthly_from_daily(daily: list[dict]) -> list[dict]:
     """Month-on-month OHLCV aggregated from daily sessions (Yahoo's own monthly bars are unreliable)."""
     months: dict[str, list[dict]] = {}
@@ -152,11 +191,7 @@ def fetch_index(spec: dict, previous: dict | None) -> dict:
     if spec.get("nse"):
         return fetch_index_nse(spec, previous)
     full = bool(spec.get("fullHistory"))
-    all_daily = fetch_daily(spec["yahoo"], "all" if full else "10y")
-    # A bar dated today while the market is still open is incomplete: drop it.
-    today = datetime.now(IST)
-    if all_daily and all_daily[-1]["d"] == today.strftime("%Y-%m-%d") and today.hour * 60 + today.minute < 15 * 60 + 35:
-        all_daily = all_daily[:-1]
+    all_daily = drop_open_session(fetch_daily(spec["yahoo"], "all" if full else "10y"))
     monthly = monthly_from_daily(all_daily)
     if not full:
         monthly = monthly[-MONTHLY_BARS:]
@@ -174,6 +209,39 @@ def fetch_index(spec: dict, previous: dict | None) -> dict:
     if spec.get("valuation"):
         out["valuation"] = fetch_valuation(spec["valuation"], (previous or {}).get("valuation") or [], daily[-1]["d"])
         out["valuationSource"] = "NSE ind_close_all archive (month-end P/E, P/B, dividend yield)"
+    return out
+
+
+def update_index(spec: dict, previous: dict) -> dict | None:
+    """
+    Daily mode: appends the latest sessions to the stored index. None when a full download is
+    needed instead (nothing stored, too long since the last run, or the stored closes disagree).
+    """
+    if spec.get("nse") or not previous.get("daily"):
+        return None
+    stored = {b["d"]: b for b in previous["daily"]}
+    range_ = recent_range(max(stored))
+    if range_ is None:
+        return None
+    fresh = drop_open_session(fetch_daily(spec["yahoo"], range_))
+    check = restated({d: b["c"] for d, b in stored.items()}, {b["d"]: b["c"] for b in fresh})
+    if check is not False:
+        print(f"  {spec['symbol']}: {'no overlap' if check is None else 'history restated'}; downloading in full")
+        return None
+    merged = {**stored, **{b["d"]: b for b in fresh}}
+    daily = [merged[d] for d in sorted(merged)]
+    # Months the new sessions touch are re-aggregated from the stored sessions (which span them).
+    touched = {b["d"][:7] for b in fresh}
+    months = {m["d"][:7]: m for m in previous.get("monthly") or []}
+    for m in monthly_from_daily([b for b in daily if b["d"][:7] in touched]):
+        months[m["d"][:7]] = m
+    monthly = [months[k] for k in sorted(months)]
+    if not spec.get("fullHistory"):
+        monthly = monthly[-MONTHLY_BARS:]
+    out = {**previous, "name": spec["name"], "category": spec["category"],
+           "daily": daily[-DAILY_BARS:], "monthly": monthly}
+    if spec.get("valuation"):
+        out["valuation"] = fetch_valuation(spec["valuation"], previous.get("valuation") or [], daily[-1]["d"])
     return out
 
 
@@ -392,13 +460,18 @@ def content_key(dataset: dict) -> str:
     return json.dumps(stripped, sort_keys=True)
 
 
-def build(config: dict, existing: dict | None) -> dict:
+def build(config: dict, existing: dict | None, mode: str = "full") -> dict:
     previous = {i["symbol"]: i for i in (existing or {}).get("indices", [])}
     indices, failures = [], []
     for spec in config["indices"]:
+        prev = previous.get(spec["symbol"])
+        if mode == "weekly" and prev:
+            indices.append(prev)  # prices belong to the daily job
+            continue
         print(f"fetching {spec['symbol']} ({spec.get('yahoo') or 'NSE archive'})")
         try:
-            indices.append(fetch_index(spec, previous.get(spec["symbol"])))
+            updated = update_index(spec, prev) if mode == "daily" and prev else None
+            indices.append(updated or fetch_index(spec, prev))
         except Exception as e:  # keep the last good copy of a single failing index
             failures.append(spec["symbol"])
             print(f"  FAILED {spec['symbol']}: {e}", file=sys.stderr)
@@ -410,7 +483,11 @@ def build(config: dict, existing: dict | None) -> dict:
         raise SystemExit("NIFTY 50 could not be fetched and no previous copy exists; aborting")
 
     try:
-        composition = fetch_constituents(config["constituents"])
+        # Constituent lists change at rebalances; the daily job reuses the stored ones.
+        if mode == "daily" and (existing or {}).get("composition"):
+            composition = existing["composition"]
+        else:
+            composition = fetch_constituents(config["constituents"])
     except Exception as e:
         print(f"  FAILED constituents: {e}", file=sys.stderr)
         composition = (existing or {}).get("composition")
@@ -421,12 +498,16 @@ def build(config: dict, existing: dict | None) -> dict:
         old_universes = {u["index"]: u for u in (existing or {}).get("universes") or []}
         for u in config["stocks"]["universes"]:
             try:
+                # Lists kept in this repo are re-read every run (no download); NSE's only weekly/monthly.
+                if mode == "daily" and u.get("url") and u["index"] in old_universes:
+                    universes.append(old_universes[u["index"]])
+                    continue
                 universes.append(fetch_constituents(u))
             except Exception as e:
                 print(f"  FAILED constituents {u['index']}: {e}", file=sys.stderr)
                 if u["index"] in old_universes:
                     universes.append(old_universes[u["index"]])
-        stocks = fetch_stocks(universes, (existing or {}).get("stocks"), failures)
+        stocks = fetch_stocks(universes, (existing or {}).get("stocks"), failures, mode)
 
     latest = max(i["daily"][-1]["d"] for i in indices)
     return {
@@ -504,16 +585,15 @@ def fetch_fundamentals(yahoo: str) -> dict:
     }
 
 
-def fetch_stock(constituent: dict, index: str, previous: dict | None = None, min_sessions: int = 60) -> dict:
+def fetch_stock(constituent: dict, index: str, previous: dict | None = None, min_sessions: int = 60,
+                fundamentals: dict | None = None) -> dict:
     """
     [previous] is the stock's stored copy (per-date maps): its closes are kept where Yahoo's series
     is shorter, so a listing Yahoo only quotes day by day (some SME stocks) builds up a history.
+    [fundamentals], when given, are reused instead of fetched (the daily job re-downloading prices).
     """
     yahoo = constituent.get("yahoo") or yahoo_symbol(constituent["symbol"])
-    all_daily = fetch_daily(yahoo, "10y")
-    today = datetime.now(IST)
-    if all_daily and all_daily[-1]["d"] == today.strftime("%Y-%m-%d") and today.hour * 60 + today.minute < 15 * 60 + 35:
-        all_daily = all_daily[:-1]
+    all_daily = drop_open_session(fetch_daily(yahoo, "10y"))
     daily = {**((previous or {}).get("_daily") or {}), **{b["d"]: b["c"] for b in all_daily}}
     monthly = {**((previous or {}).get("_monthly") or {}), **{m["d"]: m["c"] for m in monthly_from_daily(all_daily)}}
     if len(daily) < min_sessions:
@@ -528,8 +608,37 @@ def fetch_stock(constituent: dict, index: str, previous: dict | None = None, min
         # Expanded to the shared calendars in fetch_stocks().
         "_monthly": monthly,
         "_daily": {d: daily[d] for d in sorted(daily)[-STOCK_SESSIONS - 20:]},
-        "fundamentals": fetch_fundamentals(yahoo),
+        "fundamentals": fundamentals if fundamentals is not None else fetch_fundamentals(yahoo),
     }
+
+
+def update_stock(constituent: dict, index: str, stored: dict, min_sessions: int) -> dict | None:
+    """
+    Daily mode: appends the latest closes to the stored stock (per-date maps). None when the stock
+    must be downloaded in full: too long since the last run, no overlap, or restated history.
+    """
+    daily = dict(stored.get("_daily") or {})
+    if not daily:
+        return None
+    range_ = recent_range(max(daily))
+    if range_ is None:
+        return None
+    yahoo = constituent.get("yahoo") or yahoo_symbol(constituent["symbol"])
+    fresh = drop_open_session(fetch_daily(yahoo, range_))
+    closes = {b["d"]: b["c"] for b in fresh}
+    check = restated(daily, closes)
+    if check is not False:
+        print(f"  {constituent['symbol']}: {'no overlap' if check is None else 'history restated'}; downloading in full")
+        return None
+    daily.update(closes)
+    monthly = dict(stored.get("_monthly") or {})
+    # [fresh] holds every session since the last stored one, so each month's last close in it is current.
+    monthly.update({m["d"]: m["c"] for m in monthly_from_daily(fresh)})
+    if len(daily) < min_sessions:
+        raise ValueError(f"insufficient history ({len(daily)} sessions)")
+    return {**stored, "symbol": constituent["symbol"], "name": constituent["name"],
+            "industry": constituent["industry"], "index": index, "source": "yahoo:" + yahoo,
+            "_monthly": monthly, "_daily": {d: daily[d] for d in sorted(daily)[-STOCK_SESSIONS - 20:]}}
 
 
 def _expand(item: dict, months: list[str], sessions: list[str]) -> dict:
@@ -542,7 +651,7 @@ def _expand(item: dict, months: list[str], sessions: list[str]) -> dict:
             "_daily": {d: c for d, c in zip(item.get("_sessions_ref") or [], item.get("dc") or []) if c is not None}}
 
 
-def fetch_stocks(universes: list[dict], previous: dict | None, failures: list[str]) -> dict:
+def fetch_stocks(universes: list[dict], previous: dict | None, failures: list[str], mode: str = "full") -> dict:
     """
     Compact layout: one shared month list and one shared session list; each stock stores only
     its closes aligned to them (null before listing / when not traded). Keeps 250 stocks small.
@@ -554,12 +663,22 @@ def fetch_stocks(universes: list[dict], previous: dict | None, failures: list[st
     items = []
     for u in universes:
         for c in u["constituents"]:
-            print(f"fetching stock {c['symbol']} ({u['index']})")
+            stored = _expand(before[c["symbol"]], [], []) if c["symbol"] in before else None
+            min_sessions = u.get("minSessions", 60)
+            # Only repo-kept lists (minSessions set) build on stored closes in a full download;
+            # index lists take Yahoo's series as is.
+            merge = stored if "minSessions" in u else None
+            print(f"fetching stock {c['symbol']} ({u['index']}, {mode if stored else 'new'})")
             try:
-                # Only repo-kept lists (minSessions set) build on stored closes; index lists take Yahoo's series as is.
-                keep = "minSessions" in u and c["symbol"] in before
-                prev = _expand(before[c["symbol"]], [], []) if keep else None
-                items.append(fetch_stock(c, u["index"], prev, u.get("minSessions", 60)))
+                if stored is None or mode == "full":
+                    items.append(fetch_stock(c, u["index"], merge, min_sessions))
+                elif mode == "weekly":
+                    yahoo = c.get("yahoo") or yahoo_symbol(c["symbol"])
+                    items.append({**stored, "name": c["name"], "industry": c["industry"], "index": u["index"],
+                                  "fundamentals": fetch_fundamentals(yahoo)})
+                else:
+                    items.append(update_stock(c, u["index"], stored, min_sessions)
+                                 or fetch_stock(c, u["index"], None, min_sessions, stored.get("fundamentals")))
             except Exception as e:  # keep the last good copy of a failing stock
                 failures.append("stock:" + c["symbol"])
                 print(f"  FAILED {c['symbol']}: {e}", file=sys.stderr)
@@ -579,6 +698,8 @@ def fetch_stocks(universes: list[dict], previous: dict | None, failures: list[st
 
 def main() -> int:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", choices=MODES, default="full",
+                        help="daily: recent prices only; weekly: constituents + fundamentals; full: everything")
     parser.add_argument("--config", default=str(ROOT / "tools" / "indices.json"))
     parser.add_argument("--out", default=str(ROOT / "shared-data" / "dataset.json"))
     parser.add_argument("--seed", help="also copy the result here (the app now bundles the derived parts instead; see derive_parts.py --seed-dir)")
@@ -587,7 +708,10 @@ def main() -> int:
     out = Path(args.out)
     config = json.loads(Path(args.config).read_text(encoding="utf-8"))
     existing = load_existing(out)
-    dataset = build(config, existing)
+    if args.mode != "full" and not existing:
+        print(f"no stored dataset; running a full build instead of {args.mode}")
+        args.mode = "full"
+    dataset = build(config, existing, args.mode)
 
     if existing and content_key(existing) == content_key(dataset):
         print(f"no data changes; staying at version {existing['version']}")

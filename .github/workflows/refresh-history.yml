@@ -1,0 +1,22 @@
+name: Monthly history refresh
+
+# Re-downloads everything (10 years of index and stock prices, fundamentals, constituent lists)
+# and replaces the stored copy, reconciling any revisions the daily job's checks did not catch.
+on:
+  schedule:
+    # 1st of the month, 03:00 UTC = 08:30 IST.
+    - cron: 0 3 1 * *
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-dataset
+  cancel-in-progress: false
+
+jobs:
+  update:
+    uses: ./.github/workflows/dataset-job.yml
+    with:
+      mode: full

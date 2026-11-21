@@ -1,0 +1,22 @@
+name: Weekly fundamentals
+
+# Refreshes index constituent lists and every stock's fundamentals (annual/quarterly results,
+# market cap, P/E, P/B). New index members are backfilled in full. Stored prices are reused.
+on:
+  schedule:
+    # Saturday 03:00 UTC = 08:30 IST, after the week's results are out.
+    - cron: 0 3 * * 6
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-dataset
+  cancel-in-progress: false
+
+jobs:
+  update:
+    uses: ./.github/workflows/dataset-job.yml
+    with:
+      mode: weekly
