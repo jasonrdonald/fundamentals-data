@@ -38,15 +38,8 @@ object HoldingsWorkbookParser {
     private val PRICES_AS_OF = Regex("""Prices as of ([A-Z][a-z]{2} \d{1,2}, \d{4})""")
     private val DATE = DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.ENGLISH)
 
-    /** NSE series suffixes some exports append to a symbol (TECHD-SM, TMCV-BL, GOLDBEES-E). */
-    private val SERIES = setOf("E", "F", "BE", "BL", "BZ", "SM", "ST", "IV", "RR", "GB", "EQ", "GS", "MF")
-
     /** "TMCV-BL" -> "TMCV"; "BAJAJ-AUTO" stays as it is. */
-    fun baseSymbol(symbol: String): String {
-        val s = symbol.trim().uppercase()
-        val i = s.lastIndexOf('-')
-        return if (i > 0 && s.substring(i + 1) in SERIES) s.substring(0, i) else s
-    }
+    fun baseSymbol(symbol: String): String = com.fundamentalanalysis.app.domain.model.nseBaseSymbol(symbol)
 
     fun isWorkbook(bytes: ByteArray): Boolean = bytes.size > 4 && bytes[0] == 'P'.code.toByte() && bytes[1] == 'K'.code.toByte()
 

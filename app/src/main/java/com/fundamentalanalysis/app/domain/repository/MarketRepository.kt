@@ -43,6 +43,13 @@ interface SettingsRepository {
     fun observeUiLayout(): Flow<com.fundamentalanalysis.app.domain.model.UiLayout>
     suspend fun setDisplay(component: com.fundamentalanalysis.app.domain.model.UiComponent, display: com.fundamentalanalysis.app.domain.model.Display)
     suspend fun resetUiLayout(page: com.fundamentalanalysis.app.domain.model.UiPage? = null)
+    /** Offline mode: no live price lookups for holdings outside the dataset (they stay blank). */
+    fun observeOfflineMode(): Flow<Boolean>
+    suspend fun setOfflineMode(enabled: Boolean)
+    /** Tickers this device asked to have added to the wishlist, until they appear in the dataset. */
+    fun observeRequestedTickers(): Flow<Set<String>>
+    suspend fun addRequestedTickers(symbols: Set<String>)
+    suspend fun removeRequestedTickers(symbols: Set<String>)
 }
 
 /** Data that belongs to this device only (never shared). */

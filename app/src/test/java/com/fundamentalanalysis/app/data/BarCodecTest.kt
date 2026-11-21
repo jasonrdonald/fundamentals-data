@@ -21,12 +21,4 @@ class BarCodecTest {
         val points = listOf(ValuationPoint(LocalDate.of(2012, 4, 30), 18.5, null, 1.42), ValuationPoint(LocalDate.of(2026, 10, 31), null, 3.6, null))
         assertEquals(points, ValuationCodec.decode(ValuationCodec.encode(points)))
     }
-
-    @Test fun `merging keeps the older series and lets the newer one win where they overlap`() {
-        fun bar(m: Int, c: Double) = Bar(LocalDate.of(2026, m, 1), c, c, c, c, null)
-        val older = listOf(bar(1, 1.0), bar(2, 2.0), bar(3, 3.0))
-        val newer = listOf(bar(3, 30.0), bar(4, 40.0))
-        assertEquals(listOf(bar(1, 1.0), bar(2, 2.0), bar(3, 30.0), bar(4, 40.0)), mergeByDate(older, newer) { it.date })
-        assertEquals(older, mergeByDate(older, emptyList()) { it.date })
-    }
 }

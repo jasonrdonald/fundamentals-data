@@ -36,7 +36,11 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 SCHEMA_VERSION = 3  # 3: compact stock price arrays on shared calendars; multiple stock universes
-DAILY_BARS = 300      # ~14 months: prev day, 1Y return, 200-DMA, 52-week range
+DAILY_BARS = 300      # first-run backfill depth for the NSE index source
+# Daily data is kept from the first day of the month DAILY_MONTHS before the latest session's month
+# (about 285-310 sessions: prev day, 1Y return, 200-DMA, 52-week range). Whole months, so the
+# published month files (derive_v5.py) never change once closed; the oldest is dropped whole.
+DAILY_MONTHS = 14
 MONTHLY_BARS = 72     # 6 years of month-on-month data (5 full years + context)
 USER_AGENT = "fundamentals-data-pipeline/1.0 (+https://github.com/jasonrdonald/fundamentals-data)"
 ROOT = Path(__file__).resolve().parent.parent
@@ -147,6 +151,21 @@ def fetch_daily(yahoo_symbol: str, range_: str = "10y") -> list[dict]:
     return [by_date[d] for d in sorted(by_date)]
 
 
+def daily_cutoff(latest: str) -> str:
+    """First date kept in the daily window that ends at session [latest]."""
+    y, m = int(latest[:4]), int(latest[5:7]) - DAILY_MONTHS
+    while m <= 0:
+        y, m = y - 1, m + 12
+    return f"{y:04d}-{m:02d}-01"
+
+
+def in_window(bars: list[dict]) -> list[dict]:
+    if not bars:
+        return bars
+    cutoff = daily_cutoff(bars[-1]["d"])
+    return [b for b in bars if b["d"] >= cutoff]
+
+
 def drop_open_session(bars: list[dict]) -> list[dict]:
     """A bar dated today while the market is still open is incomplete: drop it."""
     today = datetime.now(IST)
@@ -200,7 +219,7 @@ def fetch_index(spec: dict, previous: dict | None) -> dict:
     monthly = monthly_from_daily(all_daily)
     if not full:
         monthly = monthly[-MONTHLY_BARS:]
-    daily = all_daily[-DAILY_BARS:]
+    daily = in_window(all_daily)
     if len(daily) < 30 or len(monthly) < 12:
         raise ValueError(f"insufficient history ({len(daily)} daily / {len(monthly)} monthly)")
     out = {
@@ -244,7 +263,7 @@ def update_index(spec: dict, previous: dict) -> dict | None:
     if not spec.get("fullHistory"):
         monthly = monthly[-MONTHLY_BARS:]
     out = {**previous, "name": spec["name"], "category": spec["category"],
-           "daily": daily[-DAILY_BARS:], "monthly": monthly}
+           "daily": in_window(daily), "monthly": monthly}
     if spec.get("valuation"):
         out["valuation"] = fetch_valuation(spec["valuation"], previous.get("valuation") or [], daily[-1]["d"])
     return out
@@ -465,6 +484,13 @@ def content_key(dataset: dict) -> str:
     return json.dumps(stripped, sort_keys=True)
 
 
+def same_as_before(fresh: dict, old: dict | None) -> dict:
+    """Keeps the stored list's date when its members are unchanged, so the published file is too."""
+    if old and old.get("asOf") and old.get("constituents") == fresh.get("constituents"):
+        return {**fresh, "asOf": old["asOf"]}
+    return fresh
+
+
 def build(config: dict, existing: dict | None, mode: str = "full") -> dict:
     previous = {i["symbol"]: i for i in (existing or {}).get("indices", [])}
     indices, failures = [], []
@@ -492,7 +518,7 @@ def build(config: dict, existing: dict | None, mode: str = "full") -> dict:
         if mode == "daily" and (existing or {}).get("composition"):
             composition = existing["composition"]
         else:
-            composition = fetch_constituents(config["constituents"])
+            composition = same_as_before(fetch_constituents(config["constituents"]), (existing or {}).get("composition"))
     except Exception as e:
         print(f"  FAILED constituents: {e}", file=sys.stderr)
         composition = (existing or {}).get("composition")
@@ -507,7 +533,7 @@ def build(config: dict, existing: dict | None, mode: str = "full") -> dict:
                 if mode == "daily" and u.get("url") and u["index"] in old_universes:
                     universes.append(old_universes[u["index"]])
                     continue
-                universes.append(fetch_constituents(u))
+                universes.append(same_as_before(fetch_constituents(u), old_universes.get(u["index"])))
             except Exception as e:
                 print(f"  FAILED constituents {u['index']}: {e}", file=sys.stderr)
                 if u["index"] in old_universes:
@@ -531,7 +557,7 @@ def build(config: dict, existing: dict | None, mode: str = "full") -> dict:
 
 # --- Constituent stocks ------------------------------------------------------------------------
 STOCK_MONTHS = 121       # 10 years of month-on-month history (+1 base month)
-STOCK_SESSIONS = 260     # ~1 year of daily closes: momentum, RSI, 200-DMA, volatility
+STOCK_SESSIONS = 340     # stored daily closes per stock; published from daily_cutoff() on (~300)
 CRORE = 1e7
 
 FUNDAMENTAL_TYPES = [
@@ -612,7 +638,7 @@ def fetch_stock(constituent: dict, index: str, previous: dict | None = None, min
         "source": "yahoo:" + yahoo,
         # Expanded to the shared calendars in fetch_stocks().
         "_monthly": monthly,
-        "_daily": {d: daily[d] for d in sorted(daily)[-STOCK_SESSIONS - 20:]},
+        "_daily": {d: daily[d] for d in sorted(daily)[-STOCK_SESSIONS:]},
         "fundamentals": fundamentals if fundamentals is not None else fetch_fundamentals(yahoo),
     }
 
@@ -643,7 +669,7 @@ def update_stock(constituent: dict, index: str, stored: dict, min_sessions: int)
         raise ValueError(f"insufficient history ({len(daily)} sessions)")
     return {**stored, "symbol": constituent["symbol"], "name": constituent["name"],
             "industry": constituent["industry"], "index": index, "source": "yahoo:" + yahoo,
-            "_monthly": monthly, "_daily": {d: daily[d] for d in sorted(daily)[-STOCK_SESSIONS - 20:]}}
+            "_monthly": monthly, "_daily": {d: daily[d] for d in sorted(daily)[-STOCK_SESSIONS:]}}
 
 
 def _expand(item: dict, months: list[str], sessions: list[str]) -> dict:
@@ -692,7 +718,8 @@ def fetch_stocks(universes: list[dict], previous: dict | None, failures: list[st
             time.sleep(0.3)
 
     months = sorted({d for it in items for d in it["_monthly"]})[-STOCK_MONTHS:]
-    sessions = sorted({d for it in items for d in it["_daily"]})[-STOCK_SESSIONS:]
+    all_sessions = sorted({d for it in items for d in it["_daily"]})
+    sessions = [d for d in all_sessions if d >= daily_cutoff(all_sessions[-1])] if all_sessions else []
     out = []
     for it in items:
         mc = [it["_monthly"].get(m) for m in months]

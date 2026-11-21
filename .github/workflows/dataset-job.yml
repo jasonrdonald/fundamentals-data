@@ -33,6 +33,11 @@ jobs:
       - name: Derive progressive parts and precomputed analytics
         run: python tools/derive_parts.py
 
+      # Schema 5 (app 1.8.0+): the same data split into a file per month of daily prices and per
+      # year of month-end data, so a normal day rewrites only a few small files.
+      - name: Derive partitioned parts (schema 5)
+        run: python tools/derive_v5.py
+
       - name: Commit and push if the data changed
         env:
           MODE: ${{ inputs.mode }}
@@ -41,7 +46,7 @@ jobs:
             echo "No data changes."
             exit 0
           fi
-          summary=$(python -c "import json; m=json.load(open('shared-data/v4/manifest.json')); print(f\"v{m['version']} (dataset v{m['datasetVersion']}) through {m['asOf']}; changed: {', '.join(m['history'][0]['changed'])}\")")
+          summary=$(python -c "import json; m=json.load(open('shared-data/v5/manifest.json')); r=m['history'][0]; print(f\"v5 {m['version']} (dataset v{m['datasetVersion']}) through {m['asOf']}; {len(r['changed'])} of {len(m['parts'])} files changed\")")
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add shared-data/

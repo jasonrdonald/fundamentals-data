@@ -1,0 +1,442 @@
+{
+ "schemaVersion": 5,
+ "version": 1,
+ "datasetVersion": 22,
+ "asOf": "2026-11-20",
+ "generatedAt": "2026-11-21T08:05:29Z",
+ "dailyFrom": "2025-09-01",
+ "parts": [
+  {
+   "name": "analytics",
+   "file": "analytics.json",
+   "group": "primary",
+   "version": 1,
+   "bytes": 304542,
+   "sha256": "6006181180dc0562b2ea4c3f82c6f650c11a832d901c8225d6f8b88576d6782d",
+   "records": 761,
+   "description": "Precomputed metrics, sector aggregates and calendar tables"
+  },
+  {
+   "name": "core",
+   "file": "core.json",
+   "group": "primary",
+   "version": 1,
+   "bytes": 87348,
+   "sha256": "89c0a09ef7552e85f017d20ccd9848141d661581b366874ded96bff659fc8b18",
+   "records": 323,
+   "description": "Index list, constituents and stock list"
+  },
+  {
+   "name": "daily-2025-09",
+   "file": "daily-2025-09.json",
+   "group": "primary",
+   "version": 1,
+   "bytes": 75255,
+   "sha256": "c65be1b30ed515a46d37ac10145968ac289b1424f73c27e8c16d3217485f316b",
+   "records": 6842,
+   "description": "Daily prices, Sep 2025"
+  },
+  {
+   "name": "daily-2025-10",
+   "file": "daily-2025-10.json",
+   "group": "primary",
+   "version": 1,
+   "bytes": 72713,
+   "sha256": "a634fc1be6e2f8e2c234a42e193d03a96c633e94178de85f84529d4c2dc27741",
+   "records": 6558,
+   "description": "Daily prices, Oct 2025"
+  },
+  {
+   "name": "daily-2025-11",
+   "file": "daily-2025-11.json",
+   "group": "primary",
+   "version": 1,
+   "bytes": 67194,
+   "sha256": "ef48ab663409cbfe366b168b19d8d024868ac64b727de611d3ae63489d591411",
+   "records": 6004,
+   "description": "Daily prices, Nov 2025"
+  },
+  {
+   "name": "daily-2025-12",
+   "file": "daily-2025-12.json",
+   "group": "primary",
+   "version": 1,
+   "bytes": 76587,
+   "sha256": "5133ccfcc1528ff7ebd67faf84e5133d53b6ce32c6720cfc75124c4fa6355212",
+   "records": 6997,
+   "description": "Daily prices, Dec 2025"
+  },
+  {
+   "name": "daily-2026-01",
+   "file": "daily-2026-01.json",
+   "group": "primary",
+   "version": 1,
+   "bytes": 71789,
+   "sha256": "1c5bccdd15478f934171781c8cba26efd3d81c5c45694468ef6a2ca3e74f2b77",
+   "records": 6643,
+   "description": "Daily prices, Jan 2026"
+  },
+  {
+   "name": "daily-2026-02",
+   "file": "daily-2026-02.json",
+   "group": "primary",
+   "version": 1,
+   "bytes": 70791,
+   "sha256": "3230674c22d711407f9e3ae08751ec316ab69e923c0a737be52b49392a523aae",
+   "records": 6387,
+   "description": "Daily prices, Feb 2026"
+  },
+  {
+   "name": "daily-2026-03",
+   "file": "daily-2026-03.json",
+   "group": "primary",
+   "version": 1,
+   "bytes": 67478,
+   "sha256": "0cbcdd4c692517c7e481ed9029ae14304dc36deef04318036799a88ddfdcb3f6",
+   "records": 6080,
+   "description": "Daily prices, Mar 2026"
+  },
+  {
+   "name": "daily-2026-04",
+   "file": "daily-2026-04.json",
+   "group": "primary",
+   "version": 1,
+   "bytes": 70996,
+   "sha256": "819c8794b7d087b4918f343bf686b26bbe6c0f463c0de07b3f9aad4627afaf28",
+   "records": 6400,
+   "description": "Daily prices, Apr 2026"
+  },
+  {
+   "name": "daily-2026-05",
+   "file": "daily-2026-05.json",
+   "group": "primary",
+   "version": 1,
+   "bytes": 67753,
+   "sha256": "16bc15740e7ef673bd1a59663a0fc92c5264f59fe23bb04f5f16ce23bf9dad76",
+   "records": 6080,
+   "description": "Daily prices, May 2026"
+  },
+  {
+   "name": "daily-2026-06",
+   "file": "daily-2026-06.json",
+   "group": "primary",
+   "version": 1,
+   "bytes": 74063,
+   "sha256": "5f8b19674ec5bfcf87cd057a2e71eba0187a5e68e997d375003674c17786cf17",
+   "records": 6731,
+   "description": "Daily prices, Jun 2026"
+  },
+  {
+   "name": "daily-2026-07",
+   "file": "daily-2026-07.json",
+   "group": "primary",
+   "version": 1,
+   "bytes": 80235,
+   "sha256": "9544629c8cb1462754e184c680092474b8c9f55439019216afaf1bb87c061f70",
+   "records": 7383,
+   "description": "Daily prices, Jul 2026"
+  },
+  {
+   "name": "daily-2026-08",
+   "file": "daily-2026-08.json",
+   "group": "primary",
+   "version": 1,
+   "bytes": 73470,
+   "sha256": "6ada680dbe75c7f47ca0fa5b6bd0c14ec50a9257da665a583cfe26fe240a798f",
+   "records": 6741,
+   "description": "Daily prices, Aug 2026"
+  },
+  {
+   "name": "daily-2026-09",
+   "file": "daily-2026-09.json",
+   "group": "primary",
+   "version": 1,
+   "bytes": 73417,
+   "sha256": "78ed785a8502010054a0d8ef360a36470ef10c2b9e6f427156cb5dfa317e120a",
+   "records": 6741,
+   "description": "Daily prices, Sep 2026"
+  },
+  {
+   "name": "daily-2026-10",
+   "file": "daily-2026-10.json",
+   "group": "primary",
+   "version": 1,
+   "bytes": 70527,
+   "sha256": "77d9975044b23324c4d6d01d422b26ade5221e4078214ea290dd7373f6860562",
+   "records": 6423,
+   "description": "Daily prices, Oct 2026"
+  },
+  {
+   "name": "daily-2026-11",
+   "file": "daily-2026-11.json",
+   "group": "primary",
+   "version": 1,
+   "bytes": 52427,
+   "sha256": "7faa7fc4f734f5d3f46938f5142ca5364c5b3967af49cda527523ed5e568f1a2",
+   "records": 4509,
+   "description": "Daily prices, Nov 2026"
+  },
+  {
+   "name": "monthly-2007",
+   "file": "monthly-2007.json",
+   "group": "history",
+   "version": 1,
+   "bytes": 434,
+   "sha256": "6abbdb3969350bfa2d38e2057e4e5e1422a0a48c7979891a4790eac28ba1e3bf",
+   "records": 4,
+   "description": "Month-end prices and valuation, 2007"
+  },
+  {
+   "name": "monthly-2008",
+   "file": "monthly-2008.json",
+   "group": "history",
+   "version": 1,
+   "bytes": 918,
+   "sha256": "94f06709f0acb136c40d5f1a2e7f52175408709e2d59718c1e04c1c946c458a7",
+   "records": 12,
+   "description": "Month-end prices and valuation, 2008"
+  },
+  {
+   "name": "monthly-2009",
+   "file": "monthly-2009.json",
+   "group": "history",
+   "version": 1,
+   "bytes": 921,
+   "sha256": "0a17641069481c2542da6d7ff089c8259eb49b944a24a59eb853200285512ea0",
+   "records": 12,
+   "description": "Month-end prices and valuation, 2009"
+  },
+  {
+   "name": "monthly-2010",
+   "file": "monthly-2010.json",
+   "group": "history",
+   "version": 1,
+   "bytes": 914,
+   "sha256": "b6910f21c0bb4f7f049e7d84d19948ecccc192e5b527ab1fac5728731f2d15ae",
+   "records": 12,
+   "description": "Month-end prices and valuation, 2010"
+  },
+  {
+   "name": "monthly-2011",
+   "file": "monthly-2011.json",
+   "group": "history",
+   "version": 1,
+   "bytes": 918,
+   "sha256": "a3ccfe0f9b31c1c4eea03cd15e2c7f83936e0099d7de7266ac304c2873a3f108",
+   "records": 12,
+   "description": "Month-end prices and valuation, 2011"
+  },
+  {
+   "name": "monthly-2012",
+   "file": "monthly-2012.json",
+   "group": "history",
+   "version": 1,
+   "bytes": 1240,
+   "sha256": "b42117503ac9ecc38130d7128a061104d2275dede655d44462635107f1a422b1",
+   "records": 21,
+   "description": "Month-end prices and valuation, 2012"
+  },
+  {
+   "name": "monthly-2013",
+   "file": "monthly-2013.json",
+   "group": "history",
+   "version": 1,
+   "bytes": 1361,
+   "sha256": "3bc12b8a281ebb743fac574b35d4248529bf6766766173293b8488c93f5faad2",
+   "records": 24,
+   "description": "Month-end prices and valuation, 2013"
+  },
+  {
+   "name": "monthly-2014",
+   "file": "monthly-2014.json",
+   "group": "history",
+   "version": 1,
+   "bytes": 1362,
+   "sha256": "888b05845dad5f82f589bb133841973b7688fefe567312eaf1d23db306027a87",
+   "records": 24,
+   "description": "Month-end prices and valuation, 2014"
+  },
+  {
+   "name": "monthly-2015",
+   "file": "monthly-2015.json",
+   "group": "history",
+   "version": 1,
+   "bytes": 1364,
+   "sha256": "1fcb092e191cac7e154f5be4cfb8cf1fa257ae082cf614ba1d86a6d0f03d9ec5",
+   "records": 24,
+   "description": "Month-end prices and valuation, 2015"
+  },
+  {
+   "name": "monthly-2016",
+   "file": "monthly-2016.json",
+   "group": "history",
+   "version": 1,
+   "bytes": 9679,
+   "sha256": "f17a662fae621ea3799ab490e03646753a04ff8e2de2c5971dc0f2516d107ce0",
+   "records": 435,
+   "description": "Month-end prices and valuation, 2016"
+  },
+  {
+   "name": "monthly-2017",
+   "file": "monthly-2017.json",
+   "group": "history",
+   "version": 1,
+   "bytes": 24864,
+   "sha256": "fd2a714685052ea429ec3fcf2c66bb56aa6fc0b1eff0939f1fb678eb863736ef",
+   "records": 2567,
+   "description": "Month-end prices and valuation, 2017"
+  },
+  {
+   "name": "monthly-2018",
+   "file": "monthly-2018.json",
+   "group": "history",
+   "version": 1,
+   "bytes": 25965,
+   "sha256": "7516c21740e0bbf0fcb6f97e8dcba4243420234a9925f47d64877156293c1b7e",
+   "records": 2727,
+   "description": "Month-end prices and valuation, 2018"
+  },
+  {
+   "name": "monthly-2019",
+   "file": "monthly-2019.json",
+   "group": "history",
+   "version": 1,
+   "bytes": 26726,
+   "sha256": "6cae3c3330a559fecf8d3b11225a90735a654b32acdbd675b6de03af09137c8b",
+   "records": 2830,
+   "description": "Month-end prices and valuation, 2019"
+  },
+  {
+   "name": "monthly-2020",
+   "file": "monthly-2020.json",
+   "group": "history",
+   "version": 1,
+   "bytes": 29971,
+   "sha256": "4268b52a2eade43e63362c29d60d5132cd306471683a3a6e02682784c0c16b94",
+   "records": 2926,
+   "description": "Month-end prices and valuation, 2020"
+  },
+  {
+   "name": "monthly-2021",
+   "file": "monthly-2021.json",
+   "group": "history",
+   "version": 1,
+   "bytes": 45101,
+   "sha256": "51efa313b8a9c0f6b336694a616c5bbf27c5483995e6aeba8ee9626d3808f43b",
+   "records": 3266,
+   "description": "Month-end prices and valuation, 2021"
+  },
+  {
+   "name": "monthly-2022",
+   "file": "monthly-2022.json",
+   "group": "history",
+   "version": 1,
+   "bytes": 45654,
+   "sha256": "87701453466c4edcfcfdbe03a451a8343148e131c533bcf23f1ce8e98fc72019",
+   "records": 3370,
+   "description": "Month-end prices and valuation, 2022"
+  },
+  {
+   "name": "monthly-2023",
+   "file": "monthly-2023.json",
+   "group": "history",
+   "version": 1,
+   "bytes": 46795,
+   "sha256": "272e261d28fe2296e4a8d4c59a1ac654fde2d5e69e83b921260ac49fc951623b",
+   "records": 3436,
+   "description": "Month-end prices and valuation, 2023"
+  },
+  {
+   "name": "monthly-2024",
+   "file": "monthly-2024.json",
+   "group": "history",
+   "version": 1,
+   "bytes": 48759,
+   "sha256": "4efbc8c60feb3da4533c9a2b635b59cea43ff09ff3feec1bd29d20239a6ed4aa",
+   "records": 3558,
+   "description": "Month-end prices and valuation, 2024"
+  },
+  {
+   "name": "monthly-2025",
+   "file": "monthly-2025.json",
+   "group": "primary",
+   "version": 1,
+   "bytes": 49946,
+   "sha256": "0be7c152409b906b6cc9304e469ced618f2c1d172cef18f0e18aae773c1db76a",
+   "records": 3723,
+   "description": "Month-end prices and valuation, 2025"
+  },
+  {
+   "name": "monthly-2026",
+   "file": "monthly-2026.json",
+   "group": "primary",
+   "version": 1,
+   "bytes": 46833,
+   "sha256": "a525a88041cc478a7bbeba9fd82bab0477af9c48557bbf1b9d559702b3d4379f",
+   "records": 3539,
+   "description": "Month-end prices and valuation, 2026"
+  },
+  {
+   "name": "fundamentals",
+   "file": "fundamentals.json",
+   "group": "history",
+   "version": 1,
+   "bytes": 270450,
+   "sha256": "3c2c0232cb8c7852ead0ac956b5d1ec6b2864a35c3e1c1dd99e5f3456dd1b63a",
+   "records": 2774,
+   "description": "Annual and quarterly financials"
+  }
+ ],
+ "history": [
+  {
+   "version": 1,
+   "datasetVersion": 22,
+   "generatedAt": "2026-11-21T08:05:29Z",
+   "asOf": "2026-11-20",
+   "changed": [
+    "analytics",
+    "core",
+    "daily-2025-09",
+    "daily-2025-10",
+    "daily-2025-11",
+    "daily-2025-12",
+    "daily-2026-01",
+    "daily-2026-02",
+    "daily-2026-03",
+    "daily-2026-04",
+    "daily-2026-05",
+    "daily-2026-06",
+    "daily-2026-07",
+    "daily-2026-08",
+    "daily-2026-09",
+    "daily-2026-10",
+    "daily-2026-11",
+    "monthly-2007",
+    "monthly-2008",
+    "monthly-2009",
+    "monthly-2010",
+    "monthly-2011",
+    "monthly-2012",
+    "monthly-2013",
+    "monthly-2014",
+    "monthly-2015",
+    "monthly-2016",
+    "monthly-2017",
+    "monthly-2018",
+    "monthly-2019",
+    "monthly-2020",
+    "monthly-2021",
+    "monthly-2022",
+    "monthly-2023",
+    "monthly-2024",
+    "monthly-2025",
+    "monthly-2026",
+    "fundamentals"
+   ],
+   "removed": [],
+   "failures": [],
+   "indices": 19,
+   "stocks": 304
+  }
+ ]
+}

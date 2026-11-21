@@ -35,6 +35,17 @@ class HoldingStocksTest {
         assertEquals(mapOf("BBB" to "Financial Services", "EEE" to "Unclassified"), wanted)
     }
 
+    @Test fun `series suffixes match the dataset's listing symbol`() {
+        val data = PortfolioData(holdings = listOf(
+            holding("AAA-SM"), // SME series of a dataset stock
+            holding("BBB-BL"), // block series of a stock the dataset lacks: looked up as BBB
+            holding("BAJAJ-AUTO"), // a hyphen that is part of the symbol
+        ))
+        val wanted = SyncHoldingStocksUseCase.wanted(data, covered = setOf("AAA"))
+        assertEquals(setOf("BBB", "BAJAJ-AUTO"), wanted.keys)
+        assertEquals("TMCV", com.fundamentalanalysis.app.domain.model.nseBaseSymbol("tmcv-bl"))
+    }
+
     @Test fun `month ends are each month's last close`() {
         val daily = listOf("2026-01-02" to 10.0, "2026-01-30" to 11.0, "2026-02-02" to 12.0, "2026-02-27" to 13.0)
         assertEquals(listOf("2026-01-01" to 11.0, "2026-02-01" to 13.0), YahooStockSource.monthEnds(daily))

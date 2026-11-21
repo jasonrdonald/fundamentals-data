@@ -14,10 +14,10 @@ import java.io.File
 /** Locates repository files whether tests run from the app module or the root. */
 object DatasetFiles {
     fun file(path: String): File = listOf(File("../$path"), File(path)).firstOrNull { it.exists() }
-        ?: error("Missing $path (run tools/derive_parts.py)")
+        ?: error("Missing $path (run tools/derive_v5.py)")
 
     val seedDir: File get() = file("app/src/main/assets/seed")
-    val publishedDir: File get() = file("shared-data/v4")
+    val publishedDir: File get() = file("shared-data/v5")
 
     val json = Json { ignoreUnknownKeys = true; coerceInputValues = true; explicitNulls = false }
 }

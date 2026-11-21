@@ -77,8 +77,10 @@ data class StocksUiState(
     val holdingCounts: Map<HoldingFilter, Int> = emptyMap(),
     /** Portfolio universe: the filtered holdings (search applied), largest first. */
     val holdings: List<Position> = emptyList(),
-    /** Portfolio universe: filtered holdings with no dataset metrics, left out of the analysis tabs. */
-    val unanalysed: Int = 0,
+    /** Portfolio universe: filtered holdings with no market data (symbols), left out of the analysis tabs. */
+    val leftOut: List<String> = emptyList(),
+    /** Offline mode: holdings outside the dataset are not looked up online. */
+    val offline: Boolean = false,
 ) {
     val isPortfolio: Boolean get() = selection.universe == PORTFOLIO_UNIVERSE
 }
@@ -88,19 +90,21 @@ class StocksViewModel @Inject constructor(
     observeStocks: ObserveAnalyzedStocksUseCase,
     market: com.fundamentalanalysis.app.domain.repository.MarketRepository,
     observePortfolio: com.fundamentalanalysis.app.domain.usecase.ObservePortfolioUseCase,
+    settings: com.fundamentalanalysis.app.domain.repository.SettingsRepository,
     private val savedState: SavedStateHandle,
 ) : ViewModel() {
 
     private val selection = savedState.getStateFlow(KEY, StockSelection())
 
     val state: StateFlow<StocksUiState> = combine(
-        observeStocks(), observeStocks.sectors(), market.observeIndices(), selection, observePortfolio(),
-    ) { allStocks, sectorStats, indices, sel, portfolio ->
+        observeStocks(), observeStocks.sectors(), market.observeIndices(), selection,
+        combine(observePortfolio(), settings.observeOfflineMode()) { p, offline -> p to offline },
+    ) { allStocks, sectorStats, indices, sel, (portfolio, offline) ->
         val names = indices.associate { it.symbol to it.name } + (ObserveAnalyzedStocksUseCase.WISHLIST to ObserveAnalyzedStocksUseCase.WISHLIST_NAME)
         val positions = portfolio?.positions.orEmpty()
         val portfolioSize = PortfolioStocks.holdings(positions, HoldingFilter.ALL).size
         if (sel.universe == PORTFOLIO_UNIVERSE && portfolioSize > 0) {
-            return@combine portfolioState(sel, positions, allStocks, names)
+            return@combine portfolioState(sel, positions, allStocks, names).copy(offline = offline)
         }
         val universes = universesOf(allStocks, names)
         val universe = universes.firstOrNull { it.symbol == sel.universe } ?: universes.firstOrNull()
@@ -179,7 +183,7 @@ class StocksViewModel @Inject constructor(
                 q.isEmpty() || it.symbol.contains(q, true) || it.sector.contains(q, true) ||
                     it.tracked?.stock?.name?.contains(q, true) == true
             },
-            unanalysed = held.size - stocks.size,
+            leftOut = held.filter { it.tracked == null }.map { it.symbol },
         )
     }
 

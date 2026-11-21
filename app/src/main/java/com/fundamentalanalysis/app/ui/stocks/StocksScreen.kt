@@ -106,6 +106,9 @@ fun StocksScreen(
                     )
                 }
             }
+            if (!state.isPortfolio && sel.universe == com.fundamentalanalysis.app.domain.usecase.ObserveAnalyzedStocksUseCase.WISHLIST) {
+                WishlistRequestRow()
+            }
             if (state.isPortfolio) {
                 // Which holdings: all stocks, one index's, or those outside the tracked indices.
                 LazyRow(
@@ -166,7 +169,7 @@ private fun SectorsView(state: StocksUiState, viewModel: StocksViewModel, onOpen
     val period = state.selection.period
     LazyColumn(contentPadding = PaddingValues(bottom = 16.dp), modifier = Modifier.fillMaxSize()) {
         item { PeriodChips(period) { viewModel.onPeriod(it) } }
-        if (state.unanalysed > 0) item { LeftOutNote(state.unanalysed) }
+        if (state.leftOut.isNotEmpty()) item { LeftOutNote(state.leftOut, state.offline) }
         item {
             SectionCard(
                 "Beat ${state.beatLabel}: ${state.totalOutperformers} of ${state.totalMeasured} stocks",
@@ -262,7 +265,7 @@ private fun RankingsView(state: StocksUiState, viewModel: StocksViewModel, onOpe
                 }
             }
         }
-        if (state.unanalysed > 0) item { LeftOutNote(state.unanalysed) }
+        if (state.leftOut.isNotEmpty()) item { LeftOutNote(state.leftOut, state.offline) }
         item {
             Text(
                 "${factor.label}: ${factor.description}. " + if (sel.top) "Best first." else "Weakest first.",
@@ -312,17 +315,31 @@ private fun RankingsView(state: StocksUiState, viewModel: StocksViewModel, onOpe
     }
 }
 
-/** Portfolio universe: holdings outside the tracked indices aren't in the analysis. */
+/**
+ * Portfolio universe: holdings with no market data aren't in the analysis. Lists them, says why,
+ * and lets the user send the list to whoever maintains the dataset so they can be added.
+ */
 @Composable
-internal fun LeftOutNote(count: Int) {
-    Text(
-        "$count ${if (count == 1) "holding has" else "holdings have"} no market data yet and " +
-            "${if (count == 1) "isn't" else "aren't"} included here. Stocks outside the dataset are fetched on this phone " +
-            "from Yahoo Finance when it's online. See All stocks.",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-    )
+internal fun LeftOutNote(symbols: List<String>, offline: Boolean) {
+    val n = symbols.size
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+        Text(
+            "$n ${if (n == 1) "holding has" else "holdings have"} no market data and ${if (n == 1) "isn't" else "aren't"} " +
+                "included here: ${symbols.joinToString(", ")}. " +
+                if (offline) "Offline mode is on, so the app doesn't look them up online. "
+                else "Stocks outside the dataset are looked up on this phone from Yahoo Finance when it's online. ",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            "Request ${if (n == 1) "it" else "them"} for the Wishlist: once the dataset admin approves, " +
+                "${if (n == 1) "it gets" else "they get"} market data here, offline too.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 2.dp),
+        )
+        RequestStocksButton(if (n == 1) "Request this stock" else "Request these stocks", symbols)
+    }
 }
 
 // ---------------------------------------------------------------- Portfolio holdings

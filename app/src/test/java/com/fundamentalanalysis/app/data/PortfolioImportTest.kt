@@ -109,6 +109,13 @@ class PortfolioImportTest {
         ),
     )
 
+    @Test fun `a holding with a series suffix is matched to its dataset listing`() {
+        val suffixed = data().copy(holdings = listOf(BrokerHolding("z", "ALPHA-SM", "INE1", HoldingKind.STOCK, "", 8.0, 100.0, 140.0)))
+        val p = PortfolioAnalytics.summarize(suffixed, tracked()).positions.single()
+        assertEquals("ALPHA", p.tracked?.symbol)
+        assertEquals(PriceSource.DATASET, p.priceSource)
+    }
+
     @Test fun `positions merge brokers by ISIN and use the freshest price`() {
         val s = PortfolioAnalytics.summarize(data(), tracked())
         val alpha = s.positions.single { it.symbol == "ALPHA" }

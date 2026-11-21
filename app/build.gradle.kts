@@ -20,12 +20,20 @@ android {
         versionCode = 9
         versionName = "1.7.0"
 
-        // Manifest of the shared dataset (schema 4); parts are fetched relative to it.
+        // Manifest of the shared dataset (schema 5); parts are fetched relative to it.
         val manifestUrl = providers.gradleProperty("dataset.manifestUrl").getOrElse("")
         buildConfigField("String", "MANIFEST_URL", "\"$manifestUrl\"")
         // Public page where the dataset pipeline can be run by hand (shown on the Data page).
         val pipelineUrl = providers.gradleProperty("dataset.pipelineUrl").getOrElse("")
         buildConfigField("String", "PIPELINE_URL", "\"$pipelineUrl\"")
+        // Wishlist requests: the "Add to wishlist" workflow that approves them (public), and the
+        // address request emails go to. The address is personal, so it is read from local.properties
+        // (gitignored) or ~/.gradle/gradle.properties; without it the app opens the share sheet instead.
+        val wishlistWorkflowUrl = providers.gradleProperty("wishlist.workflowUrl").getOrElse("")
+        buildConfigField("String", "WISHLIST_WORKFLOW_URL", "\"$wishlistWorkflowUrl\"")
+        val localProps = Properties().apply { rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) } }
+        val adminEmail = providers.gradleProperty("wishlist.adminEmail").orNull ?: localProps.getProperty("wishlist.adminEmail", "")
+        buildConfigField("String", "WISHLIST_ADMIN_EMAIL", "\"$adminEmail\"")
     }
 
     // Release signing key details come from keystore.properties (gitignored) when present, so the
@@ -107,5 +115,5 @@ dependencies {
 
 // PublishedDatasetTest reads the published dataset: rerun the tests when it changes, not only the code.
 tasks.withType<Test>().configureEach {
-    inputs.dir(rootProject.file("shared-data/v4")).withPropertyName("publishedDataset").optional()
+    inputs.dir(rootProject.file("shared-data/v5")).withPropertyName("publishedDataset").optional()
 }

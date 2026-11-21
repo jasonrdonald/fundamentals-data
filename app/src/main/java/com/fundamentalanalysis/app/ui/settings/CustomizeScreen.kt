@@ -85,6 +85,7 @@ fun CustomizeScreen(onBack: () -> Unit, viewModel: CustomizeViewModel = hiltView
                 )
             }
             item { AppearanceCard() }
+            item { OfflineModeCard() }
             items(UiPage.entries, key = { it.name }) { page ->
                 PageCard(page, layout, onSet = viewModel::set, onReset = { viewModel.reset(page) })
             }

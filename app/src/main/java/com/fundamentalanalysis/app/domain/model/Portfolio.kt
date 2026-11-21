@@ -365,3 +365,13 @@ fun List<Position>.periodReturn(rp: ReturnPeriod): PeriodReturn {
     val start = measured.sumOf { (p, r) -> p.value / (1 + r) }
     return PeriodReturn(gain, if (start > 0) gain / start else null, measured.size, size)
 }
+
+/** NSE series suffixes some broker exports append to a symbol (TECHD-SM, TMCV-BL, GOLDBEES-E). */
+private val NSE_SERIES = setOf("E", "F", "BE", "BL", "BZ", "SM", "ST", "IV", "RR", "GB", "EQ", "GS", "MF")
+
+/** The listing symbol without a series suffix: "TMCV-BL" -> "TMCV"; "BAJAJ-AUTO" stays as it is. */
+fun nseBaseSymbol(symbol: String): String {
+    val s = symbol.trim().uppercase()
+    val i = s.lastIndexOf('-')
+    return if (i > 0 && s.substring(i + 1) in NSE_SERIES) s.substring(0, i) else s
+}

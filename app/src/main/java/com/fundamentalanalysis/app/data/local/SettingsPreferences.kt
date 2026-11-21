@@ -1,9 +1,11 @@
 package com.fundamentalanalysis.app.data.local
 
 import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.fundamentalanalysis.app.di.SettingsStore
 import com.fundamentalanalysis.app.domain.model.Display
 import com.fundamentalanalysis.app.domain.model.ThemeMode
@@ -46,8 +48,26 @@ class SettingsPreferences @Inject constructor(
         }
     }
 
+    override fun observeOfflineMode(): Flow<Boolean> = dataStore.data.map { it[OFFLINE] ?: false }
+
+    override suspend fun setOfflineMode(enabled: Boolean) {
+        dataStore.edit { it[OFFLINE] = enabled }
+    }
+
+    override fun observeRequestedTickers(): Flow<Set<String>> = dataStore.data.map { it[REQUESTED] ?: emptySet() }
+
+    override suspend fun addRequestedTickers(symbols: Set<String>) {
+        dataStore.edit { it[REQUESTED] = (it[REQUESTED] ?: emptySet()) + symbols }
+    }
+
+    override suspend fun removeRequestedTickers(symbols: Set<String>) {
+        dataStore.edit { it[REQUESTED] = (it[REQUESTED] ?: emptySet()) - symbols }
+    }
+
     private companion object {
         val THEME = stringPreferencesKey("theme_mode")
+        val REQUESTED = stringSetPreferencesKey("requested_tickers")
+        val OFFLINE = booleanPreferencesKey("offline_mode")
         /** "COMPONENT=DISPLAY;..." with only the non-default choices. */
         val UI_LAYOUT = stringPreferencesKey("ui_layout")
     }

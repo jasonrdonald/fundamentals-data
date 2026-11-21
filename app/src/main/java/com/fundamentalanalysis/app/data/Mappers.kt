@@ -1,18 +1,14 @@
 package com.fundamentalanalysis.app.data
 
 import com.fundamentalanalysis.app.data.local.AnalyticsEntity
+import com.fundamentalanalysis.app.data.local.CoreLists
 import com.fundamentalanalysis.app.data.local.BarCodec
 import com.fundamentalanalysis.app.data.local.ConstituentEntity
-import com.fundamentalanalysis.app.data.local.CoreRows
-import com.fundamentalanalysis.app.data.local.HistoryRows
 import com.fundamentalanalysis.app.data.local.IndexEntity
-import com.fundamentalanalysis.app.data.local.IndexSeriesEntity
-import com.fundamentalanalysis.app.data.local.IndexValuationEntity
 import com.fundamentalanalysis.app.data.local.IndexWithSeries
 import com.fundamentalanalysis.app.data.local.PriceCodec
 import com.fundamentalanalysis.app.data.local.StockEntity
 import com.fundamentalanalysis.app.data.local.StockFinancialsEntity
-import com.fundamentalanalysis.app.data.local.StockSeriesEntity
 import com.fundamentalanalysis.app.data.local.StockWithHistory
 import com.fundamentalanalysis.app.data.local.ValuationCodec
 import com.fundamentalanalysis.app.data.remote.dto.AnalyticsPartDto
@@ -20,7 +16,7 @@ import com.fundamentalanalysis.app.data.remote.dto.BarColumnsDto
 import com.fundamentalanalysis.app.data.remote.dto.CalendarDto
 import com.fundamentalanalysis.app.data.remote.dto.CorePartDto
 import com.fundamentalanalysis.app.data.remote.dto.FinancialPeriodDto
-import com.fundamentalanalysis.app.data.remote.dto.HistoryPartDto
+import com.fundamentalanalysis.app.data.remote.dto.FundamentalsPartDto
 import com.fundamentalanalysis.app.data.remote.dto.IndexMetricsDto
 import com.fundamentalanalysis.app.data.remote.dto.SectorStatDto
 import com.fundamentalanalysis.app.data.remote.dto.StockMetricsDto
@@ -74,72 +70,17 @@ internal fun ValuationColumnsDto.toPoints(): List<ValuationPoint> = d.indices.ma
     ValuationPoint(LocalDate.parse(d[i]), pe.getOrNull(i), pb.getOrNull(i), dy.getOrNull(i))
 }
 
-/**
- * Joins two date-ordered series: [older] up to the start of [newer], then [newer]. Parts can
- * arrive in any order (recent months from core, the full series from history), so whichever is
- * newer wins for the months they share.
- */
-internal fun <T> mergeByDate(older: List<T>, newer: List<T>, date: (T) -> LocalDate): List<T> {
-    val start = newer.firstOrNull()?.let(date) ?: return older
-    return older.filter { date(it) < start } + newer
-}
+/** Index, constituent and stock lists from the core part. */
+internal fun CorePartDto.toLists(): CoreLists = CoreLists(
+    indices = indices.map { IndexEntity(it.symbol, it.name, it.category, it.source) },
+    constituents = (listOfNotNull(composition) + universes).distinctBy { it.index }.flatMap { comp ->
+        comp.constituents.map { ConstituentEntity(comp.index, it.symbol, it.name, it.industry, comp.asOf) }
+    },
+    stocks = stocks.map { StockEntity(it.symbol, it.index, it.name, it.industry, it.source, it.marketCapCr, it.pe, it.pb) },
+)
 
-private fun aligned(dates: List<LocalDate>, values: List<Double?>): List<Pair<LocalDate, Double>> =
-    dates.zip(values).mapNotNull { (d, c) -> c?.let { d to it } }
-
-/**
- * Core rows. Monthly series are merged with what is stored, so recent months from core never
- * truncate a longer history loaded earlier.
- */
-internal fun CorePartDto.toRows(storedMonthly: Map<String, ByteArray>, storedStocks: Map<String, StockSeriesEntity>): CoreRows {
-    val stockMonths = stocks.months.map(LocalDate::parse)
-    return CoreRows(
-        indices = indices.map { IndexEntity(it.symbol, it.name, it.category, it.source) },
-        series = indices.flatMap { ix ->
-            val monthly = mergeByDate(storedMonthly[ix.symbol]?.let(BarCodec::decode).orEmpty(), ix.monthly.toBars()) { it.date }
-            listOf(
-                IndexSeriesEntity(ix.symbol, DAILY, BarCodec.encode(ix.daily.toBars())),
-                IndexSeriesEntity(ix.symbol, MONTHLY, BarCodec.encode(monthly)),
-            )
-        },
-        constituents = (listOfNotNull(composition) + universes).distinctBy { it.index }.flatMap { comp ->
-            comp.constituents.map { ConstituentEntity(comp.index, it.symbol, it.name, it.industry, comp.asOf) }
-        },
-        stocks = stocks.items.map { StockEntity(it.symbol, it.index, it.name, it.industry, it.source, it.marketCapCr, it.pe, it.pb) },
-        stockSeries = stocks.items.map { s ->
-            val stored = storedStocks[s.symbol]
-            val monthly = mergeByDate(stored?.monthlyCloses?.let(PriceCodec::decode).orEmpty(), aligned(stockMonths, s.mc)) { it.first }
-            StockSeriesEntity(s.symbol, PriceCodec.encode(monthly), stored?.dailyCloses ?: ByteArray(0))
-        },
-    )
-}
-
-/** History rows; anything stored that is newer than the history file (from core) is kept. */
-internal fun HistoryPartDto.toRows(
-    json: Json,
-    storedMonthly: Map<String, ByteArray>,
-    storedStocks: Map<String, StockSeriesEntity>,
-): HistoryRows {
-    val months = stocks.months.map(LocalDate::parse)
-    val sessions = stocks.sessions.map(LocalDate::parse)
-    return HistoryRows(
-        series = indices.map { ix ->
-            val full = ix.monthly.toBars()
-            val newer = storedMonthly[ix.symbol]?.let(BarCodec::decode).orEmpty()
-                .filter { b -> full.lastOrNull()?.let { b.date >= it.date } ?: true }
-            IndexSeriesEntity(ix.symbol, MONTHLY, BarCodec.encode(mergeByDate(full, newer) { it.date }))
-        },
-        valuation = indices.filter { it.valuation.d.isNotEmpty() }.map { IndexValuationEntity(it.symbol, ValuationCodec.encode(it.valuation.toPoints())) },
-        stockSeries = stocks.items.map { s ->
-            val full = aligned(months, s.mc)
-            val newer = storedStocks[s.symbol]?.monthlyCloses?.let(PriceCodec::decode).orEmpty()
-                .filter { p -> full.lastOrNull()?.let { p.first >= it.first } ?: true }
-            StockSeriesEntity(s.symbol, PriceCodec.encode(mergeByDate(full, newer) { it.first }), PriceCodec.encode(aligned(sessions, s.dc)))
-        },
-        financials = stocks.items.map {
-            StockFinancialsEntity(it.symbol, json.encodeToString<List<FinancialPeriodDto>>(it.annual), json.encodeToString<List<FinancialPeriodDto>>(it.quarterly))
-        },
-    )
+internal fun FundamentalsPartDto.toRows(json: Json): List<StockFinancialsEntity> = items.map {
+    StockFinancialsEntity(it.symbol, json.encodeToString<List<FinancialPeriodDto>>(it.annual), json.encodeToString<List<FinancialPeriodDto>>(it.quarterly))
 }
 
 internal fun AnalyticsPartDto.toRows(json: Json): List<AnalyticsEntity> =

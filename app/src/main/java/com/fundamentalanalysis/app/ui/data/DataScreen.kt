@@ -164,7 +164,7 @@ fun DataScreen(onBack: () -> Unit, viewModel: DataViewModel = hiltViewModel()) {
 @Composable
 private fun DatasetCard(status: DataStatus, working: Boolean, onCheck: () -> Unit, onReloadAll: () -> Unit, onReset: () -> Unit) {
     val core = status.stored[DataPart.CORE]
-    val updateAvailable = status.published.any { (part, p) -> (status.stored[part]?.version ?: 0) < p.version }
+    val updateAvailable = status.published.values.any { it.pendingFiles > 0 }
     SectionCard("Dataset", subtitle = "Shared by every install · no sign-in") {
         Text(
             "Data through ${status.asOf ?: "—"}",
@@ -225,13 +225,14 @@ private fun PartsCard(status: DataStatus) {
                     val detail = when {
                         loading -> "Loading…"
                         stored == null -> "Waiting"
-                        else -> "v${stored.version} · ${Fmt.bytes(stored.bytes)} · ${"%,d".format(Locale.US, stored.records)} records · " +
+                        else -> "v${stored.version} · ${if (stored.files > 1) "${stored.files} files · " else ""}${Fmt.bytes(stored.bytes)} · " +
+                            "${"%,d".format(Locale.US, stored.records)} records · " +
                             "${if (stored.origin == DataOrigin.REMOTE) "downloaded" else "bundled"} · loaded in ${stored.loadMillis} ms"
                     }
                     Text(detail, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 4.dp))
-                    if (published != null && (stored?.version ?: 0) < published.version) {
+                    if (published != null && published.pendingFiles > 0) {
                         Text(
-                            "v${published.version} available (${Fmt.bytes(published.bytes)})",
+                            "v${published.version} available: ${published.pendingFiles} file${if (published.pendingFiles > 1) "s" else ""} (${Fmt.bytes(published.pendingBytes)})",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.primary,
                         )
@@ -253,8 +254,8 @@ private fun PartsCard(status: DataStatus) {
 
 private val PART_DESCRIPTIONS = mapOf(
     DataPart.ANALYTICS to "Precomputed metrics, sector aggregates and calendar tables",
-    DataPart.CORE to "Latest sessions, recent months, constituents and stock list",
-    DataPart.HISTORY to "Full monthly history, valuation history, stock daily closes and financials",
+    DataPart.CORE to "Index and stock lists, daily prices and recent month-ends",
+    DataPart.HISTORY to "Earlier years of month-end prices and valuation, and financials",
 )
 
 @Composable
@@ -283,8 +284,10 @@ private fun SourcesCard(pipelineUrl: String?) {
     val context = LocalContext.current
     SectionCard("Updating from public sources", subtitle = "Runs on GitHub, not on this phone") {
         Text(
-            "A scheduled pipeline fetches prices from Yahoo Finance and constituents, industries and valuation from NSE's public archives " +
-                "every weekday at 17:00 IST, precomputes the analytics and publishes a new version. Phones then download only the parts that changed.",
+            "Scheduled pipelines fetch prices from Yahoo Finance and constituents, industries and valuation from NSE's public archives: " +
+                "the latest prices every weekday at 22:30 IST, fundamentals and constituent lists every Saturday, and a full refresh of the history " +
+                "on the 1st of each month. Each run precomputes the analytics and publishes a new version, split into a file per month of " +
+                "daily prices and per year of month-ends. Phones then download only the files that changed.",
             style = MaterialTheme.typography.bodyMedium,
         )
         if (pipelineUrl != null) {

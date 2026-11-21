@@ -54,6 +54,7 @@ class FakeMarketDao : MarketDao {
     override suspend fun parts(): List<DatasetPartEntity> = partsRows.value.values.toList()
     override suspend fun indexSeries(timeframe: String): List<IndexSeriesEntity> = series.value.values.filter { it.timeframe == timeframe }
     override suspend fun stockSeries(): List<StockSeriesEntity> = stockSeriesRows.value.values.toList()
+    override suspend fun valuations(): List<IndexValuationEntity> = valuation.value.values.toList()
     override suspend fun meta(key: String): String? = metaRows.value[key]
 
     override suspend fun insertIndices(rows: List<IndexEntity>) { indices.value += rows.associateBy { it.symbol } }
@@ -82,4 +83,5 @@ class FakeMarketDao : MarketDao {
     override suspend fun deleteStockSeries() { stockSeriesRows.value = emptyMap() }
     override suspend fun deleteFinancials() { financials.value = emptyMap() }
     override suspend fun deleteParts() { partsRows.value = emptyMap() }
+    override suspend fun deletePartsNamed(names: List<String>) { partsRows.value = partsRows.value - names.toSet() }
 }

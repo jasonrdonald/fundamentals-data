@@ -3,22 +3,34 @@ package com.fundamentalanalysis.app.domain.model
 import com.fundamentalanalysis.app.domain.analysis.CalendarTable
 
 /** The dataset is split into parts that load in this order (see tools/derive_parts.py). */
+/**
+ * How the Data page groups the published files. The dataset is split into many small files
+ * (a file per month of daily prices, per year of month-end data); each belongs to one group.
+ */
 enum class DataPart(val key: String, val label: String) {
     /** Precomputed metrics, sector aggregates and calendar tables. */
     ANALYTICS("analytics", "Analytics"),
-    /** Latest sessions, recent months, constituents, stock list. */
+    /** Lists, daily prices and recent month-ends: everything loaded before the first screen. */
     CORE("core", "Recent data"),
-    /** Full monthly history, valuation history, stock daily closes, financials. */
+    /** Older month-end years and financials, loaded in the background. */
     HISTORY("history", "History");
 
     companion object {
-        fun from(key: String): DataPart? = entries.firstOrNull { it.key == key }
+        /** The group of a published file, from its manifest group ("primary"/"history") or its name. */
+        fun forPart(name: String, group: String? = null): DataPart = when {
+            name == ANALYTICS.key -> ANALYTICS
+            name == CORE.key || name == HISTORY.key -> entries.first { it.key == name }
+            group == "primary" -> CORE
+            group == "history" -> HISTORY
+            name.startsWith("daily-") -> CORE
+            else -> HISTORY
+        }
     }
 }
 
 enum class DataOrigin { BUNDLED, REMOTE }
 
-/** A part as stored on this device. */
+/** A group of files as stored on this device (version = the newest file's). */
 data class StoredPart(
     val part: DataPart,
     val version: Int,
@@ -28,15 +40,20 @@ data class StoredPart(
     val asOf: String?,
     val loadedAtMillis: Long,
     val loadMillis: Long,
+    val files: Int = 1,
 )
 
-/** A part as published (from the last manifest seen). */
+/** A group of files as published (from the last manifest seen). */
 data class PublishedPart(
     val part: DataPart,
     val version: Int,
     val bytes: Long,
     val records: Int,
     val description: String,
+    val files: Int = 1,
+    /** Files in this group that are newer than the device's copy, and their size. */
+    val pendingFiles: Int = 0,
+    val pendingBytes: Long = 0,
 )
 
 /** One run of the dataset pipeline that changed something (from the published manifest). */
@@ -86,10 +103,11 @@ data class DataStatus(
     val progress: SyncProgress,
     val remoteConfigured: Boolean,
     val pipelineUrl: String?,
+    /** Every history file the last manifest lists is stored. */
+    val historyReady: Boolean = DataPart.HISTORY in stored,
 ) {
     /** Recent data and analytics are in: every screen can render. */
     val primaryReady: Boolean get() = DataPart.CORE in stored && DataPart.ANALYTICS in stored
-    val historyReady: Boolean get() = DataPart.HISTORY in stored
     val asOf: String? get() = stored[DataPart.CORE]?.asOf
 }
 

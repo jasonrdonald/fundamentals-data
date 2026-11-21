@@ -92,30 +92,36 @@ Not included yet:
 ## Architecture
 ```
 tools/build_dataset.py   pipeline step 1: public sources -> shared-data/dataset.json (stdlib Python)
-tools/derive_parts.py    pipeline step 2: dataset.json -> shared-data/v4/ (parts + precomputed analytics)
+tools/derive_parts.py    pipeline step 2: dataset.json -> shared-data/v4/ (3 parts + precomputed analytics)
+tools/derive_v5.py       pipeline step 3: dataset.json -> shared-data/v5/ (a file per month/year; app 1.8.0+)
 .github/workflows/       daily prices, weekly fundamentals, monthly full refresh; each commits changes
-shared-data/v4/          what the app downloads: manifest.json, analytics.json, core.json, history.json
+shared-data/v5/          what the app downloads: manifest.json, analytics, core, daily-YYYY-MM, monthly-YYYY, fundamentals
+shared-data/v4/          the previous format, still published for app 1.7.0 and older
 shared-data/dataset.json the full dataset (schemaVersion 3), still read by app versions up to 1.1
 app/                     Android app
   ui/       Compose screens + @HiltViewModel (StateFlow UiState per screen, built off the main thread)
   domain/   models, analytics calculators (reference implementation), use cases
   data/     Room (single source of truth), sync engine, Retrofit + kotlinx.serialization,
-            bundled seed (assets/seed = a copy of shared-data/v4)
+            bundled seed (assets/seed = a copy of shared-data/v5)
   di/       Hilt modules
 ```
 
 ### Loading data without freezing the app
-The dataset is split into parts that load in order:
+The dataset (schema 5, `shared-data/v5/`) is split into small files by how often they change:
 
-| # | Part | Size | Contents | When |
+| Files | Size (gzip) | Contents | Changes | Loads |
 |---|---|---|---|---|
-| 1 | analytics | ~230 KB | Precomputed metrics for every index and stock, benchmark returns, sector aggregates (universe × period × sector) and the Nifty 50 calendar tables | Before the first screen |
-| 2 | core | ~400 KB | 300 daily sessions and the last 13 months per index, constituents, stock list with the last 13 month-end closes | Before the first screen |
-| 3 | history | ~960 KB | Full monthly history, valuation history, 10 years of stock month-end closes, stock daily closes, financials | In the background |
+| `analytics` | ~300 KB (73 KB) | Precomputed metrics for every index and stock, benchmark returns, sector aggregates and the Nifty 50 calendar tables | Daily | Before the first screen |
+| `core` | ~85 KB (16 KB) | Index list, constituents, stock list with market cap, P/E and P/B | Weekly | Before the first screen |
+| `daily-YYYY-MM` (about 15) | ~70 KB (27 KB) each | One month of daily index bars and stock closes | Current month daily; closed months fixed | Before the first screen |
+| `monthly-YYYY` (one per year) | up to ~50 KB (18 KB) each | One year of month-end index bars, stock closes and Nifty 50 valuation | Current year daily; closed years fixed | Last two years before the first screen, the rest in the background |
+| `fundamentals` | ~270 KB (59 KB) | Annual and quarterly financials per stock | Weekly | In the background |
+
+On a normal day only `analytics`, the current month, the current year and the manifest change: about 115 KB compressed, against about 600 KB for the three files of schema 4. Closed months and years change only when a split or bonus restates a stock's history, or the monthly full refresh corrects a past value. The oldest daily month is dropped whole when the window moves on.
 
 How it works:
-- **First launch** stores parts 1 and 2 from the APK (about 0.3 s on an emulator), shows the app, then loads part 3 in the background. Every screen works from parts 1 and 2. Views that need older data (3Y/5Y comparisons, 3Y–10Y stock charts, a stock's year table and financials) show "Loading older history…" until part 3 lands, then fill in by themselves.
-- **Every launch** downloads only `manifest.json` (about 2 KB, revalidated with its ETag) and then only the parts whose version changed. Parts 1 and 2 are swapped in one transaction so screens never mix two versions. Each file is checked against the manifest's SHA-256 before use.
+- **First launch** stores the primary files from the APK, shows the app, then loads the history files in the background. Every screen works from the primary files. Views that need older data (3Y/5Y comparisons, 3Y–10Y stock charts, a stock's year table and financials) show "Loading older history…" until the history lands, then fill in by themselves. After an app update that changes the data format, the stored data is cleared and reloaded from the APK (the watchlist and portfolio stay).
+- **Every launch** downloads only `manifest.json` (about 3 KB compressed, revalidated with its ETag) and then only the files whose version changed. Each month and year file is merged into the stored series by date, and all primary files are written in one transaction so screens never mix two versions. Each file is checked against the manifest's SHA-256 before use.
 - **Precomputed analytics:** metrics, group-bys and calendar tables are calculated once by the pipeline instead of on every phone at every launch. The app's Kotlin calculators remain the reference: `PublishedDatasetTest` recomputes every precomputed number from the raw data and fails if Python and Kotlin disagree.
 - **Storage:** price history is packed into one database row per series (`BarCodec`, `PriceCodec`); writing one row per bar took about 3 s for the indices alone. Lists never load price history.
 - **No main-thread work:** repository mapping and every screen's state are built on background dispatchers.
@@ -147,9 +153,12 @@ python tools/build_dataset.py --mode daily
 ```bash
 python tools/derive_parts.py
 ```
+```bash
+python tools/derive_v5.py
+```
 To also refresh the copy bundled inside the app (do this before building a release):
 ```bash
-python tools/derive_parts.py --seed-dir app/src/main/assets/seed
+python tools/derive_v5.py --seed-dir app/src/main/assets/seed
 ```
 
 How the pipeline behaves:
@@ -164,6 +173,8 @@ How the pipeline behaves:
   | [`update-fundamentals.yml`](.github/workflows/update-fundamentals.yml) | `weekly` | Saturday 08:30 IST | Constituent lists and every stock's fundamentals. Prices are reused. |
   | [`refresh-history.yml`](.github/workflows/refresh-history.yml) | `full` | 1st of the month, 08:30 IST | Everything (10 years of prices), replacing the stored copy to pick up any revisions |
 
+  | [`add-to-wishlist.yml`](.github/workflows/add-to-wishlist.yml) | — | By hand, to approve a request | Checks the requested tickers on Yahoo Finance, adds the valid ones to `tools/wishlist.csv` ([`tools/add_to_wishlist.py`](tools/add_to_wishlist.py)), then starts a daily run so they're published |
+
   Each can also be started by hand from the repo's Actions tab; the daily one, which the app's Data page links to, lets you pick any mode.
 - Each run that changes something is added to the manifest's `history`, which the app shows as the pipeline timeline.
 
@@ -174,7 +185,7 @@ Check that the published files match what the app expects. This parses them with
 
 The app reads the dataset from this repo through `dataset.manifestUrl` in `gradle.properties`; parts are fetched from the same folder:
 ```properties
-dataset.manifestUrl=https://raw.githubusercontent.com/jasonrdonald/fundamentals-data/main/shared-data/v4/manifest.json
+dataset.manifestUrl=https://raw.githubusercontent.com/jasonrdonald/fundamentals-data/main/shared-data/v5/manifest.json
 ```
 This repository is public, so anyone can read the dataset. Don't commit private data.
 

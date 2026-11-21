@@ -2,8 +2,10 @@ package com.fundamentalanalysis.app.data
 
 import com.fundamentalanalysis.app.data.remote.dto.AnalyticsPartDto
 import com.fundamentalanalysis.app.data.remote.dto.CorePartDto
-import com.fundamentalanalysis.app.data.remote.dto.HistoryPartDto
+import com.fundamentalanalysis.app.data.remote.dto.DailyPartDto
+import com.fundamentalanalysis.app.data.remote.dto.MonthlyPartDto
 import com.fundamentalanalysis.app.data.remote.dto.ManifestDto
+import com.fundamentalanalysis.app.data.sync.DatasetSync
 import com.fundamentalanalysis.app.data.sync.SUPPORTED_SCHEMA_VERSION
 import com.fundamentalanalysis.app.domain.analysis.CalendarTable
 import com.fundamentalanalysis.app.domain.analysis.CalendarTables
@@ -13,11 +15,8 @@ import com.fundamentalanalysis.app.domain.analysis.StockAnalyticsCalculator
 import com.fundamentalanalysis.app.domain.analysis.StockReports
 import com.fundamentalanalysis.app.domain.analysis.ValuationMeasure
 import com.fundamentalanalysis.app.domain.model.AnalyzedStock
-import com.fundamentalanalysis.app.domain.model.Bar
 import com.fundamentalanalysis.app.domain.model.CalendarKind
-import com.fundamentalanalysis.app.domain.model.FinancialPeriod
 import com.fundamentalanalysis.app.domain.model.IndexAnalytics
-import com.fundamentalanalysis.app.domain.model.IndexCategory
 import com.fundamentalanalysis.app.domain.model.MarketIndex
 import com.fundamentalanalysis.app.domain.model.Period
 import com.fundamentalanalysis.app.domain.model.Stock
@@ -28,13 +27,20 @@ import org.junit.Test
 import java.io.File
 import java.security.MessageDigest
 import java.time.LocalDate
+import java.time.YearMonth
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import kotlin.math.abs
 import kotlin.math.max
 
 /**
- * Contract and parity tests for the published progressive dataset (shared-data/v4, also bundled
+ * Contract and parity tests for the published partitioned dataset (shared-data/v5, also bundled
  * as the app's seed):
- * - every file parses with the app's decoder, matches the manifest and is internally consistent;
+ * - every file parses with the app's decoder and matches the manifest exactly;
+ * - loaded through the app's own sync engine, the data is complete and consistent;
  * - every precomputed number equals what the app's own Kotlin calculators produce from the raw
  *   data, so pipeline (Python) and app (Kotlin) can never silently drift apart.
  */
@@ -45,18 +51,36 @@ class PublishedDatasetTest {
 
     private val manifest = json.decodeFromString<ManifestDto>(text("manifest.json"))
     private val core = json.decodeFromString<CorePartDto>(text("core.json"))
-    private val history = json.decodeFromString<HistoryPartDto>(text("history.json"))
     private val analytics = json.decodeFromString<AnalyticsPartDto>(text("analytics.json"))
+
+    /** The published files as the app stores them: loaded by DatasetSync into an in-memory DAO. */
+    private val dao = FakeMarketDao().also { dao ->
+        val sync = DatasetSync(dao, RemoteDir(dir, configured = false), SeedDir(dir), json, Dispatchers.Unconfined, CoroutineScope(SupervisorJob()))
+        runBlocking { sync.resetToBundled() }
+    }
+
+    private val indices: Map<String, MarketIndex> =
+        runBlocking { dao.observeIndices().first() }.associate { it.index.symbol to it.toDomain() }
+
+    private val stocks: List<Stock> = core.stocks.map { s -> runBlocking { dao.observeStock(s.symbol).first()!!.toDomain(json) } }
 
     @Test fun `manifest describes the files exactly`() {
         assertEquals(SUPPORTED_SCHEMA_VERSION, manifest.schemaVersion)
-        assertEquals(listOf("analytics", "core", "history"), manifest.loadOrder)
+        val files = dir.listFiles { f -> f.name.endsWith(".json") && f.name != "manifest.json" }!!.map { it.name }.toSet()
+        assertEquals("files on disk", files, manifest.parts.map { it.file }.toSet())
         manifest.parts.forEach { p ->
             val bytes = File(dir, p.file).readBytes()
             assertEquals("${p.name} size", p.bytes, bytes.size.toLong())
             assertEquals("${p.name} sha256", p.sha256, MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) })
             assertTrue("${p.name} version", p.version in 1..manifest.version)
+            assertTrue("${p.name} group", p.group in setOf("primary", "history"))
         }
+        val primary = manifest.parts.filter { it.group == "primary" }.map { it.name }.toSet()
+        assertTrue("analytics and core load first", primary.containsAll(listOf("analytics", "core")))
+        val months = manifest.parts.map { it.name }.filter { it.startsWith("daily-") }.map { YearMonth.parse(it.removePrefix("daily-")) }
+        assertTrue("daily months must be primary", months.all { "daily-$it" in primary })
+        assertEquals("daily months contiguous", (0 until months.size).map { months.first().plusMonths(it.toLong()) }, months)
+        assertEquals("dailyFrom", months.first().atDay(1).toString(), manifest.dailyFrom)
         assertTrue("timeline newest first", manifest.history.zipWithNext().all { (a, b) -> a.version > b.version })
         assertEquals(manifest.version, manifest.history.first().version)
         // The bundled seed is the same publish (or an older one).
@@ -64,80 +88,66 @@ class PublishedDatasetTest {
         assertTrue(seed.version <= manifest.version)
     }
 
+    @Test fun `each daily file holds one month and each monthly file one year`() {
+        manifest.parts.filter { it.name.startsWith("daily-") }.forEach { p ->
+            val part = json.decodeFromString<DailyPartDto>(text(p.file))
+            val month = p.name.removePrefix("daily-")
+            assertEquals(month, part.month)
+            assertTrue(p.name, (part.indices.flatMap { it.bars.d } + part.stocks.dates).all { it.startsWith(month) })
+        }
+        manifest.parts.filter { it.name.startsWith("monthly-") }.forEach { p ->
+            val part = json.decodeFromString<MonthlyPartDto>(text(p.file))
+            val year = p.name.removePrefix("monthly-")
+            assertEquals(year.toInt(), part.year)
+            val dates = part.indices.flatMap { it.bars.d } + part.valuation.flatMap { it.points.d } + part.stocks.dates
+            assertTrue(p.name, dates.all { it.startsWith(year) })
+        }
+    }
+
     @Test fun `recent data is complete enough for every screen`() {
         val symbols = core.indices.map { it.symbol }
         assertTrue("NIFTY 50 missing", "NIFTY 50" in symbols)
         assertEquals("duplicate symbols", symbols.size, symbols.toSet().size)
-        core.indices.forEach { ix ->
-            val daily = ix.daily.toBars()
-            val monthly = ix.monthly.toBars()
-            assertTrue("${ix.symbol}: too little daily history", daily.size >= 253)
-            assertTrue("${ix.symbol}: recent months", monthly.size in 2..13)
-            listOf(daily, monthly).forEach { bars ->
+        assertEquals(symbols.toSet(), indices.keys)
+        indices.values.forEach { ix ->
+            assertTrue("${ix.symbol}: too little daily history", ix.daily.size >= 253)
+            listOf(ix.daily, ix.monthly).forEach { bars ->
                 assertEquals("${ix.symbol}: dates not increasing", bars.map { it.date }.sorted().distinct(), bars.map { it.date })
                 bars.forEach { b -> assertTrue("${ix.symbol} ${b.date}: bad OHLC", b.low <= minOf(b.open, b.close) + 1e-6 && b.high >= maxOf(b.open, b.close) - 1e-6 && b.low > 0) }
             }
-            assertEquals("${ix.symbol}: monthly/daily mismatch", daily.last().close, monthly.last().close, 1e-6)
+            assertEquals("${ix.symbol}: monthly/daily mismatch", ix.daily.last().close, ix.monthly.last().close, 1e-6)
+            assertTrue("${ix.symbol}: daily data before dailyFrom", ix.daily.first().date >= LocalDate.parse(manifest.dailyFrom))
         }
-        val months = core.stocks.months.map(LocalDate::parse)
-        assertEquals("stock symbols unique", core.stocks.items.size, core.stocks.items.map { it.symbol }.toSet().size)
-        core.stocks.items.forEach { s ->
+        assertEquals("stock symbols unique", core.stocks.size, core.stocks.map { it.symbol }.toSet().size)
+        core.stocks.forEach { s ->
             assertTrue("${s.symbol}: benchmark ${s.index} missing", com.fundamentalanalysis.app.domain.usecase.ObserveAnalyzedStocksUseCase.benchmarkOf(s.index) in symbols)
-            assertEquals("${s.symbol}: mc not aligned", months.size, s.mc.size)
         }
         core.universes.forEach { u ->
-            assertTrue("${u.index}: stocks per constituent", core.stocks.items.count { it.index == u.index } >= u.constituents.size - 3)
+            assertTrue("${u.index}: stocks per constituent", core.stocks.count { it.index == u.index } >= u.constituents.size - 3)
         }
         val comp = core.composition!!
         assertTrue(comp.constituents.isNotEmpty() && comp.constituents.all { it.industry.isNotBlank() })
     }
 
-    @Test fun `history is complete and consistent with recent data`() {
-        history.indices.forEach { ix ->
-            val monthly = ix.monthly.toBars()
-            val recent = core.indices.first { it.symbol == ix.symbol }.monthly.toBars()
-            assertTrue("${ix.symbol}: too little monthly history", monthly.size >= 61)
-            assertEquals("${ix.symbol}: history must end where recent months end", recent.last(), monthly.last())
-        }
-        val nifty = history.indices.first { it.symbol == "NIFTY 50" }
-        assertTrue("NIFTY 50 needs 10+ years", nifty.monthly.d.size >= 120)
-        val valuation = nifty.valuation.toPoints()
+    @Test fun `history is complete and consistent`() {
+        indices.values.forEach { ix -> assertTrue("${ix.symbol}: too little monthly history", ix.monthly.size >= 61) }
+        val nifty = indices.getValue("NIFTY 50")
+        assertTrue("NIFTY 50 needs 10+ years", nifty.monthly.size >= 120)
+        val valuation = nifty.valuation
         assertTrue("valuation history", valuation.size >= 120)
         assertEquals("one valuation point per month", valuation.map { it.date.withDayOfMonth(1) }.distinct().size, valuation.size)
         assertTrue("implausible P/E", valuation.all { (it.pe ?: 0.0) in 5.0..60.0 })
-        val wishlist = core.stocks.items.filter { it.index == com.fundamentalanalysis.app.domain.usecase.ObserveAnalyzedStocksUseCase.WISHLIST }.map { it.symbol }.toSet()
-        history.stocks.items.forEach { s ->
-            assertEquals("${s.symbol}: mc", history.stocks.months.size, s.mc.size)
-            assertEquals("${s.symbol}: dc", history.stocks.sessions.size, s.dc.size)
+        val wishlist = core.stocks.filter { it.index == com.fundamentalanalysis.app.domain.usecase.ObserveAnalyzedStocksUseCase.WISHLIST }.map { it.symbol }.toSet()
+        stocks.forEach { s ->
             // Wishlist stocks may be new listings (or quoted only day by day); index constituents need 60 sessions.
             val minimum = if (s.symbol in wishlist) 1 else 60
-            assertTrue("${s.symbol}: too little daily history", s.dc.count { it != null } >= minimum)
-            assertTrue("${s.symbol}: non-positive close", (s.mc + s.dc).filterNotNull().all { it > 0 })
+            assertTrue("${s.symbol}: too little daily history", s.daily.size >= minimum)
+            assertTrue("${s.symbol}: non-positive close", (s.monthly + s.daily).all { it.close > 0 })
         }
+        assertEquals("financials for every stock", core.stocks.size, dao.financials.value.size)
     }
 
     // ------------------------------------------------------------------ parity with the Kotlin calculators
-
-    private val indices: Map<String, MarketIndex> = core.indices.associate { ix ->
-        val h = history.indices.first { it.symbol == ix.symbol }
-        ix.symbol to MarketIndex(
-            ix.symbol, ix.name, IndexCategory.from(ix.category), ix.source,
-            daily = ix.daily.toBars(), monthly = h.monthly.toBars(), valuation = h.valuation.toPoints(),
-        )
-    }
-
-    private val stocks: List<Stock> = core.stocks.items.map { c ->
-        val h = history.stocks.items.first { it.symbol == c.symbol }
-        fun bars(dates: List<String>, closes: List<Double?>) =
-            dates.zip(closes).mapNotNull { (d, v) -> v?.let { Bar(LocalDate.parse(d), it, it, it, it, null) } }
-        fun periods(list: List<com.fundamentalanalysis.app.data.remote.dto.FinancialPeriodDto>) =
-            list.map { FinancialPeriod(LocalDate.parse(it.d), it.revenue, it.netIncome, it.operatingIncome, it.equity, it.debt, it.eps) }.sortedBy { it.endDate }
-        Stock(
-            c.symbol, c.name, c.industry.ifBlank { "Other" }, c.index, c.marketCapCr, c.pe, c.pb,
-            monthly = bars(history.stocks.months, h.mc), daily = bars(history.stocks.sessions, h.dc),
-            annual = periods(h.annual), quarterly = periods(h.quarterly),
-        )
-    }
 
     private fun near(label: String, expected: Double?, actual: Double?) {
         if (expected == null || actual == null || !expected.isFinite()) {

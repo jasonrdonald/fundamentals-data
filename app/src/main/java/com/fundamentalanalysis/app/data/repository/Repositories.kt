@@ -89,9 +89,20 @@ class OfflineFirstMarketRepository @Inject constructor(
     }.flowOn(cpu)
 
     override fun observeAvailability(): Flow<DataAvailability> =
-        combine(dao.observeParts(), sync.progress) { parts, progress ->
-            DataAvailability(historyReady = parts.any { it.name == DataPart.HISTORY.key }, loading = progress.active)
+        combine(dao.observeParts(), dao.observeMeta(), sync.progress) { parts, meta, progress ->
+            DataAvailability(historyReady = historyComplete(parts, manifestOf(meta)), loading = progress.active)
         }.distinctUntilChanged()
+
+    private fun manifestOf(meta: List<com.fundamentalanalysis.app.data.local.MetaEntity>): ManifestDto? =
+        meta.firstOrNull { it.key == MetaKeys.MANIFEST }?.value?.takeIf { it.isNotBlank() }
+            ?.let { runCatching { json.decodeFromString<ManifestDto>(it) }.getOrNull() }
+
+    /** All history files the manifest lists are stored (any stored history file, without a manifest). */
+    private fun historyComplete(parts: List<com.fundamentalanalysis.app.data.local.DatasetPartEntity>, manifest: ManifestDto?): Boolean {
+        val stored = parts.map { it.name }.toSet()
+        val wanted = manifest?.parts.orEmpty().filter { DataPart.forPart(it.name, it.group) == DataPart.HISTORY }
+        return if (wanted.isEmpty()) parts.any { DataPart.forPart(it.name) == DataPart.HISTORY } else wanted.all { it.name in stored }
+    }
 
     override fun observeDataStatus(): Flow<DataStatus> = combine(
         dao.observeParts(),
@@ -101,31 +112,38 @@ class OfflineFirstMarketRepository @Inject constructor(
         sync.progress,
     ) { parts, events, meta, counts, progress ->
         val metaMap = meta.associate { it.key to it.value }
-        val manifest = metaMap[MetaKeys.MANIFEST]?.let { runCatching { json.decodeFromString<ManifestDto>(it) }.getOrNull() }
+        val manifest = manifestOf(meta)
+        val groupOf = manifest?.parts.orEmpty().associate { it.name to DataPart.forPart(it.name, it.group) }
+        val storedVersions = parts.associate { it.name to it.version }
         DataStatus(
-            stored = parts.mapNotNull { p ->
-                DataPart.from(p.name)?.let {
-                    it to StoredPart(it, p.version, p.bytes, p.records, runCatching { DataOrigin.valueOf(p.origin) }.getOrDefault(DataOrigin.BUNDLED),
-                        p.asOf, p.loadedAtMillis, p.loadMillis)
-                }
-            }.toMap(),
-            published = manifest?.parts.orEmpty().mapNotNull { p ->
-                DataPart.from(p.name)?.let { it to PublishedPart(it, p.version, p.bytes, p.records, p.description) }
-            }.toMap(),
+            stored = parts.groupBy { groupOf[it.name] ?: DataPart.forPart(it.name) }.mapValues { (group, ps) ->
+                StoredPart(
+                    group, ps.maxOf { it.version }, ps.sumOf { it.bytes }, ps.sumOf { it.records },
+                    if (ps.any { it.origin == DataOrigin.REMOTE.name }) DataOrigin.REMOTE else DataOrigin.BUNDLED,
+                    ps.mapNotNull { it.asOf }.maxOrNull(), ps.maxOf { it.loadedAtMillis }, ps.sumOf { it.loadMillis }, ps.size,
+                )
+            },
+            published = manifest?.parts.orEmpty().groupBy { DataPart.forPart(it.name, it.group) }.mapValues { (group, ps) ->
+                val pending = ps.filter { (storedVersions[it.name] ?: 0) < it.version }
+                PublishedPart(group, ps.maxOf { it.version }, ps.sumOf { it.bytes }, ps.sumOf { it.records }, GROUP_DESCRIPTIONS.getValue(group),
+                    ps.size, pending.size, pending.sumOf { it.bytes })
+            },
             publishedVersion = manifest?.version,
             publishedAsOf = manifest?.asOf,
             pipelineRuns = manifest?.history.orEmpty().map { r ->
-                PipelineRun(r.version, r.datasetVersion, r.generatedAt, r.asOf, r.changed.mapNotNull(DataPart::from), r.failures, r.indices, r.stocks)
+                PipelineRun(r.version, r.datasetVersion, r.generatedAt, r.asOf,
+                    r.changed.map { groupOf[it] ?: DataPart.forPart(it) }.distinct().sorted(), r.failures, r.indices, r.stocks)
             },
             events = events.map { e ->
                 SyncEvent(e.atMillis, runCatching { SyncEventType.valueOf(e.type) }.getOrDefault(SyncEventType.CHECK),
-                    e.part?.let(DataPart::from), e.version, e.bytes, e.durationMillis, e.success, e.message)
+                    e.part?.let { groupOf[it] ?: DataPart.forPart(it) }, e.version, e.bytes, e.durationMillis, e.success, e.message)
             },
             precomputed = counts.associate { tableLabel(it.kind) to it.count },
             lastCheckedAtMillis = metaMap[MetaKeys.CHECKED_AT]?.toLongOrNull(),
             progress = progress,
             remoteConfigured = sync.remoteConfigured,
             pipelineUrl = BuildConfig.PIPELINE_URL.ifBlank { null },
+            historyReady = historyComplete(parts, manifest),
         )
     }.flowOn(cpu)
 
@@ -156,3 +174,9 @@ class LocalWatchlistRepository @Inject constructor(
         else dao.insert(WatchlistEntity(symbol, System.currentTimeMillis()))
     }
 }
+
+private val GROUP_DESCRIPTIONS = mapOf(
+    DataPart.ANALYTICS to "Precomputed metrics, sector aggregates and calendar tables",
+    DataPart.CORE to "Index and stock lists, a file per month of daily prices, and this and last year's month-ends",
+    DataPart.HISTORY to "A file per earlier year of month-end prices and valuation, and financials",
+)

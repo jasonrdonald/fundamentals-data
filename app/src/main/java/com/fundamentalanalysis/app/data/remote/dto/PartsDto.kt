@@ -3,10 +3,14 @@ package com.fundamentalanalysis.app.data.remote.dto
 import kotlinx.serialization.Serializable
 
 /*
- * Wire format of the progressive dataset (schemaVersion 4), produced by tools/derive_parts.py
- * under shared-data/v4/ and bundled under assets/seed/. The app downloads the small manifest
- * first, then only the parts whose version changed: analytics + core first (enough for every
- * screen), history in the background.
+ * Wire format of the partitioned dataset (schemaVersion 5), produced by tools/derive_v5.py under
+ * shared-data/v5/ and bundled under assets/seed/. The app downloads the small manifest first, then
+ * only the parts whose version changed: the "primary" group (analytics, core, the daily months and
+ * recent years; enough for every screen) first, the "history" group in the background.
+ *
+ *   analytics          precomputed metrics            core           index, constituent, stock lists
+ *   daily-YYYY-MM      a month of daily prices        monthly-YYYY   a year of month-end data
+ *   fundamentals       financials per stock
  */
 
 @Serializable
@@ -16,7 +20,8 @@ data class ManifestDto(
     val datasetVersion: Int? = null,
     val asOf: String? = null,
     val generatedAt: String? = null,
-    val loadOrder: List<String> = emptyList(),
+    /** First date the daily parts cover; older daily data on the device is dropped. */
+    val dailyFrom: String? = null,
     val parts: List<PartMetaDto> = emptyList(),
     /** Pipeline runs that changed something, newest first. */
     val history: List<PipelineRunDto> = emptyList(),
@@ -31,6 +36,8 @@ data class PartMetaDto(
     val sha256: String = "",
     val records: Int = 0,
     val description: String = "",
+    /** "primary" (loaded before the first screen) or "history" (in the background). */
+    val group: String = "",
 )
 
 @Serializable
@@ -40,6 +47,7 @@ data class PipelineRunDto(
     val generatedAt: String? = null,
     val asOf: String? = null,
     val changed: List<String> = emptyList(),
+    val removed: List<String> = emptyList(),
     val failures: List<String> = emptyList(),
     val indices: Int = 0,
     val stocks: Int = 0,
@@ -67,35 +75,26 @@ data class ValuationColumnsDto(
 
 // ----------------------------------------------------------------------------------- core
 
+/** Lists only (no prices): changes when constituents or fundamentals change (weekly). */
 @Serializable
 data class CorePartDto(
     val schemaVersion: Int,
-    val asOf: String? = null,
-    val indices: List<CoreIndexDto> = emptyList(),
+    val indices: List<IndexInfoDto> = emptyList(),
     val composition: CompositionDto? = null,
     val universes: List<CompositionDto> = emptyList(),
-    val stocks: CoreStocksDto = CoreStocksDto(),
+    val stocks: List<StockInfoDto> = emptyList(),
 )
 
 @Serializable
-data class CoreIndexDto(
+data class IndexInfoDto(
     val symbol: String,
     val name: String,
     val category: String = "BROAD",
     val source: String? = null,
-    val daily: BarColumnsDto = BarColumnsDto(),
-    /** The most recent months only; history brings the rest. */
-    val monthly: BarColumnsDto = BarColumnsDto(),
 )
 
 @Serializable
-data class CoreStocksDto(
-    val months: List<String> = emptyList(),
-    val items: List<CoreStockDto> = emptyList(),
-)
-
-@Serializable
-data class CoreStockDto(
+data class StockInfoDto(
     val symbol: String,
     val name: String,
     val industry: String = "",
@@ -104,40 +103,56 @@ data class CoreStockDto(
     val marketCapCr: Double? = null,
     val pe: Double? = null,
     val pb: Double? = null,
-    /** Month-end closes aligned to [CoreStocksDto.months]. */
-    val mc: List<Double?> = emptyList(),
 )
 
-// ----------------------------------------------------------------------------------- history
+// ----------------------------------------------------------------------------------- prices
 
+/** One calendar month of daily index bars and stock closes. */
 @Serializable
-data class HistoryPartDto(
+data class DailyPartDto(
     val schemaVersion: Int,
-    val asOf: String? = null,
-    val indices: List<HistoryIndexDto> = emptyList(),
-    val stocks: HistoryStocksDto = HistoryStocksDto(),
+    val month: String,
+    val indices: List<IndexBarsDto> = emptyList(),
+    val stocks: ClosesDto = ClosesDto(),
+)
+
+/** One year of month-end index bars (with `last`), valuation points and stock closes. */
+@Serializable
+data class MonthlyPartDto(
+    val schemaVersion: Int,
+    val year: Int,
+    val indices: List<IndexBarsDto> = emptyList(),
+    val valuation: List<IndexValuationDto> = emptyList(),
+    val stocks: ClosesDto = ClosesDto(),
 )
 
 @Serializable
-data class HistoryIndexDto(
+data class IndexBarsDto(val symbol: String, val bars: BarColumnsDto = BarColumnsDto())
+
+@Serializable
+data class IndexValuationDto(val symbol: String, val points: ValuationColumnsDto = ValuationColumnsDto())
+
+/** Closes of each stock aligned to [dates] (null where it did not trade). */
+@Serializable
+data class ClosesDto(
+    val dates: List<String> = emptyList(),
+    val items: List<StockClosesDto> = emptyList(),
+)
+
+@Serializable
+data class StockClosesDto(val symbol: String, val c: List<Double?> = emptyList())
+
+// ----------------------------------------------------------------------------------- fundamentals
+
+@Serializable
+data class FundamentalsPartDto(
+    val schemaVersion: Int,
+    val items: List<StockFinancialsDto> = emptyList(),
+)
+
+@Serializable
+data class StockFinancialsDto(
     val symbol: String,
-    /** The full monthly series (replaces the recent months from core). */
-    val monthly: BarColumnsDto = BarColumnsDto(),
-    val valuation: ValuationColumnsDto = ValuationColumnsDto(),
-)
-
-@Serializable
-data class HistoryStocksDto(
-    val months: List<String> = emptyList(),
-    val sessions: List<String> = emptyList(),
-    val items: List<HistoryStockDto> = emptyList(),
-)
-
-@Serializable
-data class HistoryStockDto(
-    val symbol: String,
-    val mc: List<Double?> = emptyList(),
-    val dc: List<Double?> = emptyList(),
     val annual: List<FinancialPeriodDto> = emptyList(),
     val quarterly: List<FinancialPeriodDto> = emptyList(),
 )

@@ -11,7 +11,7 @@ GitHub Actions (daily/weekly/monthly)                  Android app
 │   Yahoo → index & stock data  │        │        ↑ Flows                          │
 │   NSE   → lists, valuation    │        │ Domain (use cases, analysis, models)    │
 │ tools/derive_parts.py         │        │        ↑                                │
-│   → shared-data/v4/*.json     │──raw──▶│ Data: Room DB, DataStore, sync engine   │
+│   → shared-data/v5/*.json     │──raw──▶│ Data: Room DB, DataStore, sync engine   │
 │     manifest + 3 parts        │ GitHub │   seed copy in APK (assets/seed)        │
 └───────────────────────────────┘        └─────────────────────────────────────────┘
 ```
@@ -28,14 +28,16 @@ Three layers in the app, wired with Hilt:
 
 ### The shared dataset
 
-Built by a scheduled GitHub Actions workflow (`.github/workflows/update-dataset.yml`) and committed to `shared-data/v4/`:
+Built by scheduled GitHub Actions workflows and committed to `shared-data/v5/` (schema 5, read by app 1.8.0+). `shared-data/v4/` (three files) is still published for app 1.7.0 and older, and `shared-data/dataset.json` is the pipeline's own full copy.
 
-| File | Contents |
-|---|---|
-| `manifest.json` | Schema version, dataset version, as-of date, and a version + SHA-256 for each part |
-| `analytics.json` | Precomputed index analytics |
-| `core.json` | Indices, recent daily bars, stocks (Nifty 50, Next 50, Midcap 150, Wishlist) with fundamentals |
-| `history.json` | Long monthly/daily history for charts and seasonality |
+| File | Contents | Changes | Load group |
+|---|---|---|---|
+| `manifest.json` | Schema version, dataset version, as-of date, `dailyFrom`, and a version, size, SHA-256 and group for each file | Every run | — |
+| `analytics.json` | Precomputed index and stock metrics, sector aggregates, calendar tables | Daily | primary |
+| `core.json` | Index list, constituents, stock list (Nifty 50, Next 50, Midcap 150, Wishlist) with market cap, P/E, P/B | Weekly | primary |
+| `daily-YYYY-MM.json` | One month of daily index bars and stock closes (about 15 months kept) | Current month only | primary |
+| `monthly-YYYY.json` | One year of month-end index bars, stock closes and Nifty 50 valuation | Current year only | primary for this and last year, else history |
+| `fundamentals.json` | Annual and quarterly financials per stock | Weekly | history |
 
 Sources used by the pipeline (not by the app): Yahoo Finance for index and stock prices and stock fundamentals; NSE archives for constituent lists and Nifty 50 valuation. Wishlist stocks come from `tools/wishlist.csv` and are measured against the Nifty 500.
 
@@ -77,20 +79,20 @@ Stocks are collected only for those four lists (about 300). The sectoral indices
 
 1. Pick the shortest Yahoo range that reaches back to the last stored session: `5d`, `1mo` or `3mo`. If the last run was more than ~80 days ago, download in full.
 2. Compare the fresh closes with the stored closes for the sessions both have. A difference over 0.5% means the history was restated (a 1:10 bonus is −9%, a 1:1 split −50%), so that symbol is re-downloaded in full; its stored fundamentals are kept. The most recent stored session is allowed 5%, because it often came from Yahoo's provisional end-of-day price, which can move once the close is final.
-3. Otherwise append the new sessions, recompute the months they fall in, and trim to the kept window (indices: 300 sessions, 72 months; stocks: 260 sessions, 121 months; Nifty 50: full monthly history).
+3. Otherwise append the new sessions, recompute the months they fall in, and trim to the kept window (indices: 300 sessions, 72 months; stocks: 260 sessions, 121 months; Nifty 50: full monthly history, from Sep 2007).
 4. Symbols with no stored copy are downloaded in full, with fundamentals.
 
 Requests per run: daily about 325 small chart requests (one per index and stock); weekly about 305 (constituent lists plus one fundamentals request per stock); full about 630. Requests are spaced 0.3–0.4 s apart.
 
 **Resilience**: if an index, a stock or a constituent list fails to download, the previous run's copy is kept and the failure is listed in the manifest. The run aborts only if the Nifty 50 cannot be fetched and no previous copy exists.
 
-**Publishing (`derive_parts.py`)**: the new dataset is split into `analytics`, `core` and `history`, and each part's SHA-256 is compared with the last published one. Only changed parts get a new part version; if nothing changed (a holiday), the manifest version stays and nothing is committed. Apps therefore download only changed parts, but a changed part is always replaced whole — the published files are full snapshots, not deltas.
+**Publishing (`derive_v5.py`)**: the dataset is split into the files above and each file's SHA-256 is compared with the last published one. Only changed files get a new version and are rewritten; files that left the window are deleted; if nothing changed (a holiday), the manifest version stays and nothing is committed. Daily data is kept from the first day of a month (`build_dataset.py`, 14 full months plus the current one), so a closed month's file never changes and the oldest is dropped whole. On a normal day `analytics`, the current month, the current year and the manifest change: about 115 KB compressed (schema 4: about 600 KB). A split or bonus re-publishes every file that holds that stock's history.
 
 ### Sync engine (`DatasetSync`)
 
-1. **First launch:** `ensurePrimary()` loads `analytics` + `core` from the copy bundled in the APK, then history in the background. No network is needed.
-2. **After the first frame:** `refresh()` downloads the manifest and fetches only the parts whose version is newer than the stored one.
-3. **Integrity:** each part's SHA-256 is checked against the manifest before it is stored; analytics and core are written in one transaction.
+1. **First launch:** `ensurePrimary()` loads the primary files from the copy bundled in the APK, then the history files in the background. No network is needed. Data stored by an older schema is cleared and reloaded first.
+2. **After the first frame:** `refresh()` downloads the manifest and fetches only the files whose version is newer than the stored one. `PartMerger` merges month and year files into the stored series by date (a re-published file replaces those dates), and daily data before `dailyFrom` is dropped.
+3. **Integrity:** each file's SHA-256 is checked against the manifest before it is stored; all primary files are written in one transaction.
 4. **Caching:** OkHttp's 20 MB HTTP cache revalidates the manifest by ETag, so an unchanged manifest costs a 304.
 5. **Failure:** any error is logged (Data page) and the stored data stays in use.
 6. **Manual controls (Data page):** check now, reload everything, reset to the bundled copy.
@@ -118,10 +120,15 @@ The only permission is `INTERNET`. There are no analytics, crash-reporting or ad
 
 | When | Request | Host | Sends |
 |---|---|---|---|
-| App start, and Data page "check now" | `GET shared-data/v4/manifest.json` | raw.githubusercontent.com | Nothing beyond the request itself |
-| Only when the manifest lists a newer part | `GET shared-data/v4/{analytics,core,history}.json` | raw.githubusercontent.com | Nothing |
+| App start, and Data page "check now" | `GET shared-data/v5/manifest.json` | raw.githubusercontent.com | Nothing beyond the request itself |
+| Only when the manifest lists a newer file | `GET shared-data/v5/<file>.json` (usually analytics, the current month and the current year) | raw.githubusercontent.com | Nothing |
 | App start, if portfolio holds stocks outside the dataset and their cache is over 6 h old | `GET /v8/finance/chart/{SYMBOL}.NS` (or `.BO`), then `/ws/fundamentals-timeseries/v1/finance/timeseries/{SYMBOL}` | query1.finance.yahoo.com | The ticker symbol only (no quantities or values) |
+| User checks tickers in a wishlist request | `GET /v8/finance/chart/{SYMBOL}.NS` (then `.BO`, `-SM.NS`) | query1.finance.yahoo.com | The ticker only |
 | User taps the pipeline link | Opens the GitHub Actions page in the browser | github.com | — |
+
+**Offline mode** (Customize page) turns the Yahoo Finance lookups off: holdings outside the dataset then show no market data, and the app lists them with a "Request these stocks" button.
+
+**Wishlist requests.** Under the Wishlist chip (and from the missing-stocks notes) users enter tickers. The app checks each one: format, already in the dataset or already requested, then one Yahoo chart call (an INR equity with a price; NSE, then BSE, then the SME series). The listed ones go to the developer in a pre-filled email (`wishlist.adminEmail` in `local.properties`; without it, the share sheet), and the device remembers them as "Requested" until they appear in the dataset. The developer approves by running the **Add to wishlist** workflow with the line from the email: it checks the tickers again, adds name, industry and Yahoo symbol to `tools/wishlist.csv`, commits, and starts a daily run that backfills and publishes them. Holdings are matched to the dataset by listing symbol, so broker symbols with an NSE series suffix (TECHD-SM, TMCV-BL) count as covered.
 
 Yahoo Finance is a public but unofficial, undocumented API. It needs no key, but it can change or rate-limit without notice; the app treats it as best effort and falls back to cached values.
 
@@ -136,4 +143,4 @@ Yahoo Finance is a public but unofficial, undocumented API. It needs no key, but
 
 - Kotlin, Compose, Hilt, Room, kotlinx.serialization, Retrofit/OkHttp; minSdk 26, targetSdk 37.
 - `dataset.manifestUrl` and `dataset.pipelineUrl` in `gradle.properties` become `BuildConfig` fields.
-- Release: bump the version, refresh `assets/seed` from `shared-data/v4`, run the unit tests (which also validate the published dataset), build a signed APK, publish a GitHub release.
+- Release: bump the version, refresh `assets/seed` from `shared-data/v5`, run the unit tests (which also validate the published dataset), build a signed APK, publish a GitHub release.

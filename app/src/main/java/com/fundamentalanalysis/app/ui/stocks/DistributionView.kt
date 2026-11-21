@@ -50,7 +50,7 @@ internal fun DistributionView(state: StocksUiState, onPeriod: (Period) -> Unit, 
                 items(SECTOR_PERIODS) { p -> FilterChip(period == p, onClick = { onPeriod(p) }, label = { Text(p.label) }) }
             }
         }
-        if (state.unanalysed > 0) item { LeftOutNote(state.unanalysed) }
+        if (state.leftOut.isNotEmpty()) item { LeftOutNote(state.leftOut, state.offline) }
         if (stats == null) {
             item { EmptyState("Not enough stocks report a ${period.label} return to draw a distribution.") }
             return@LazyColumn

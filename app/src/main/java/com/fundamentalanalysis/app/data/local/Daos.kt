@@ -7,21 +7,27 @@ import androidx.room.Query
 import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
 
-/** Everything the core part writes, applied in one transaction. */
-data class CoreRows(
+/** Index, constituent and stock lists (the core part); replaced as a whole. */
+data class CoreLists(
     val indices: List<IndexEntity>,
-    val series: List<IndexSeriesEntity>,
     val constituents: List<ConstituentEntity>,
     val stocks: List<StockEntity>,
-    val stockSeries: List<StockSeriesEntity>,
 )
 
-/** Everything the history part writes. */
-data class HistoryRows(
-    val series: List<IndexSeriesEntity>,
-    val valuation: List<IndexValuationEntity>,
-    val stockSeries: List<StockSeriesEntity>,
-    val financials: List<StockFinancialsEntity>,
+/**
+ * Everything one load writes, in one transaction: lists and analytics are replaced when present,
+ * series rows are upserted (already merged with what was stored), parts are recorded.
+ */
+data class DatasetUpdate(
+    val core: CoreLists? = null,
+    val analytics: List<AnalyticsEntity>? = null,
+    val indexSeries: List<IndexSeriesEntity> = emptyList(),
+    val valuation: List<IndexValuationEntity> = emptyList(),
+    val stockSeries: List<StockSeriesEntity> = emptyList(),
+    val financials: List<StockFinancialsEntity> = emptyList(),
+    val parts: List<DatasetPartEntity> = emptyList(),
+    /** Parts no longer published (e.g. a daily month that left the window). */
+    val dropParts: List<String> = emptyList(),
 )
 
 data class AnalyticsCount(val kind: String, val count: Int)
@@ -71,6 +77,9 @@ interface MarketDao {
     @Query("SELECT * FROM stock_series")
     suspend fun stockSeries(): List<StockSeriesEntity>
 
+    @Query("SELECT * FROM index_valuation")
+    suspend fun valuations(): List<IndexValuationEntity>
+
     @Query("SELECT value FROM meta WHERE `key` = :key")
     suspend fun meta(key: String): String?
 
@@ -104,50 +113,32 @@ interface MarketDao {
     @Query("DELETE FROM stock_series") suspend fun deleteStockSeries()
     @Query("DELETE FROM stock_financials") suspend fun deleteFinancials()
     @Query("DELETE FROM dataset_parts") suspend fun deleteParts()
+    @Query("DELETE FROM dataset_parts WHERE name IN (:names)") suspend fun deletePartsNamed(names: List<String>)
 
-    /** Recent data: replaces the index/stock lists and their recent series. */
     @Transaction
-    suspend fun applyCore(rows: CoreRows, part: DatasetPartEntity) {
-        deleteIndices()
-        deleteConstituents()
-        deleteStocks()
-        insertIndices(rows.indices)
-        insertIndexSeries(rows.series)
-        insertConstituents(rows.constituents)
-        insertStocks(rows.stocks)
-        insertStockSeries(rows.stockSeries)
+    suspend fun applyUpdate(update: DatasetUpdate) {
+        update.core?.let {
+            deleteIndices()
+            deleteConstituents()
+            deleteStocks()
+            insertIndices(it.indices)
+            insertConstituents(it.constituents)
+            insertStocks(it.stocks)
+        }
+        update.analytics?.let {
+            deleteAnalytics()
+            insertAnalytics(it)
+        }
+        insertIndexSeries(update.indexSeries)
+        insertValuation(update.valuation)
+        insertStockSeries(update.stockSeries)
+        insertFinancials(update.financials)
         pruneIndexSeries()
         pruneValuation()
         pruneStockSeries()
         pruneFinancials()
-        upsertPart(part)
-    }
-
-    @Transaction
-    suspend fun applyAnalytics(rows: List<AnalyticsEntity>, part: DatasetPartEntity) {
-        deleteAnalytics()
-        insertAnalytics(rows)
-        upsertPart(part)
-    }
-
-    /** Core and analytics of the same dataset version, swapped together so screens never mix them. */
-    @Transaction
-    suspend fun applyPrimary(core: CoreRows, corePart: DatasetPartEntity, analytics: List<AnalyticsEntity>, analyticsPart: DatasetPartEntity) {
-        applyCore(core, corePart)
-        applyAnalytics(analytics, analyticsPart)
-    }
-
-    @Transaction
-    suspend fun applyHistory(rows: HistoryRows, part: DatasetPartEntity) {
-        insertIndexSeries(rows.series)
-        insertValuation(rows.valuation)
-        insertStockSeries(rows.stockSeries)
-        insertFinancials(rows.financials)
-        pruneIndexSeries()
-        pruneValuation()
-        pruneStockSeries()
-        pruneFinancials()
-        upsertPart(part)
+        if (update.dropParts.isNotEmpty()) deletePartsNamed(update.dropParts)
+        update.parts.forEach { upsertPart(it) }
     }
 
     /** Drops all shared data (the watchlist and the sync log stay). */

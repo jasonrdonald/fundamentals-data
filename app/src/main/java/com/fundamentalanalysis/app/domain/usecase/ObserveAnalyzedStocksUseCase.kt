@@ -26,6 +26,7 @@ import javax.inject.Singleton
 class ObserveAnalyzedStocksUseCase @Inject constructor(
     private val market: MarketRepository,
     private val holdingStocks: com.fundamentalanalysis.app.domain.repository.HoldingStocksRepository,
+    private val settings: com.fundamentalanalysis.app.domain.repository.SettingsRepository,
     @DefaultDispatcher private val dispatcher: CoroutineDispatcher,
     @ApplicationScope scope: CoroutineScope,
 ) {
@@ -44,7 +45,9 @@ class ObserveAnalyzedStocksUseCase @Inject constructor(
      * [HOLDING_BENCHMARK] (they belong to no tracked index, so [Stock.indexSymbol] is empty).
      */
     private val holdings: Flow<List<AnalyzedStock>> =
-        combine(holdingStocks.observe(), market.observeIndices()) { stocks, indices ->
+        combine(holdingStocks.observe(), market.observeIndices(), settings.observeOfflineMode()) { stocks, indices, offline ->
+            // Offline mode shows only dataset data: stocks looked up earlier are hidden, not deleted.
+            if (offline) return@combine emptyList()
             val bench = indices.firstOrNull { it.symbol == HOLDING_BENCHMARK }
             stocks.map { AnalyzedStock(it, StockAnalyticsCalculator.calculate(it, bench)) }
         }.flowOn(dispatcher).shareIn(scope, SharingStarted.WhileSubscribed(60_000), replay = 1)

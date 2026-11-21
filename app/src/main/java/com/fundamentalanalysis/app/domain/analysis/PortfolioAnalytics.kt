@@ -37,7 +37,9 @@ object PortfolioAnalytics {
             .groupBy { it.isin.ifBlank { it.symbol } }
             .map { (_, rows) ->
                 val first = rows.first()
-                val stock = tracked[first.symbol]?.takeIf { first.kind == HoldingKind.STOCK }
+                // Broker exports may carry a series suffix (TECHD-SM); the dataset uses the listing symbol.
+                val stock = (tracked[first.symbol] ?: tracked[com.fundamentalanalysis.app.domain.model.nseBaseSymbol(first.symbol)])
+                    ?.takeIf { first.kind == HoldingKind.STOCK }
                 val qty = rows.sumOf { it.qty }
                 // Only shares with a known cost count towards cost and P&L (see BrokerHolding.costSource).
                 val costedQty = rows.sumOf { it.costedQty }
