@@ -19,6 +19,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import javax.inject.Inject
 
 enum class StocksTab(val label: String, val component: com.fundamentalanalysis.app.domain.model.UiComponent) {
@@ -28,8 +30,26 @@ enum class StocksTab(val label: String, val component: com.fundamentalanalysis.a
     ALL("All stocks", com.fundamentalanalysis.app.domain.model.UiComponent.STOCKS_ALL),
 }
 
-/** Periods offered for "beat the Nifty" sector analysis. */
+/** Periods offered above the tabs: they drive every tab's returns. */
 val SECTOR_PERIODS = listOf(Period.M1, Period.M3, Period.M6, Period.YTD, Period.Y1, Period.Y3)
+
+/** Sort orders of the All stocks tab; each has a natural direction (biggest / best / A to Z first). */
+enum class StockSort(val label: String) {
+    MARKET_CAP("Market cap"), VALUE("Value"), RETURN("Return"), DAY("1D"), PNL("P&L"), NAME("Name");
+
+    companion object {
+        val INDEX = listOf(MARKET_CAP, RETURN, DAY, NAME)
+        val PORTFOLIO = listOf(VALUE, RETURN, DAY, PNL, NAME)
+    }
+}
+
+/** [list] ordered by [key] (nulls last), biggest first or reversed; [name] orders A to Z. */
+internal fun <T> sortRows(list: List<T>, sort: StockSort, reversed: Boolean, name: (T) -> String, key: (T) -> Double?): List<T> {
+    if (sort == StockSort.NAME) return list.sortedBy(name).let { if (reversed) it.reversed() else it }
+    val (known, unknown) = list.partition { key(it) != null }
+    val ordered = known.sortedByDescending { key(it)!! }
+    return (if (reversed) ordered.reversed() else ordered) + unknown.sortedBy(name)
+}
 
 val RANK_SIZES = listOf(10, 20, 30)
 
@@ -46,7 +66,13 @@ data class StockSelection(
     val query: String = "",
     /** Portfolio universe only: which holdings to analyse. */
     val holdings: HoldingFilter = HoldingFilter.ALL,
-) : java.io.Serializable
+    /** All stocks tab: order, and whether it is reversed. Unavailable orders fall back to the first. */
+    val sort: StockSort = StockSort.MARKET_CAP,
+    val sortReversed: Boolean = false,
+) : java.io.Serializable {
+    fun sortFor(portfolio: Boolean): StockSort =
+        (if (portfolio) StockSort.PORTFOLIO else StockSort.INDEX).let { if (sort in it) sort else it.first() }
+}
 
 /** Pseudo-universe for the imported portfolio's stock holdings. */
 const val PORTFOLIO_UNIVERSE = "PORTFOLIO"
@@ -96,6 +122,14 @@ class StocksViewModel @Inject constructor(
 
     private val selection = savedState.getStateFlow(KEY, StockSelection())
 
+    /**
+     * The search box's text, held here and updated synchronously: the filtered list follows through
+     * [selection] on a background thread, and feeding the box from that would put the cursor back
+     * at the start on every keystroke.
+     */
+    var queryText by androidx.compose.runtime.mutableStateOf(selection.value.query)
+        private set
+
     val state: StateFlow<StocksUiState> = combine(
         observeStocks(), observeStocks.sectors(), market.observeIndices(), selection,
         combine(observePortfolio(), settings.observeOfflineMode()) { p, offline -> p to offline },
@@ -134,10 +168,17 @@ class StocksViewModel @Inject constructor(
             totalOutperformers = sectors.sumOf { it.outperformers },
             totalMeasured = sectors.sumOf { it.measured },
             sectors = sectors,
-            ranking = StockReports.rank(stocks, sel.factor, sel.count, sel.top),
-            all = stocks
-                .filter { q.isEmpty() || it.symbol.contains(q, true) || it.stock.name.contains(q, true) || it.stock.industry.contains(q, true) }
-                .sortedByDescending { it.stock.marketCapCr ?: 0.0 },
+            ranking = StockReports.rank(stocks, sel.factor, sel.count, sel.top, sel.period),
+            all = sortRows(
+                stocks.filter { q.isEmpty() || it.symbol.contains(q, true) || it.stock.name.contains(q, true) || it.stock.industry.contains(q, true) },
+                sel.sortFor(portfolio = false), sel.sortReversed, { it.symbol },
+            ) { s ->
+                when (sel.sortFor(portfolio = false)) {
+                    StockSort.RETURN -> s.metrics.returns[sel.period]
+                    StockSort.DAY -> s.metrics.change1d
+                    else -> s.stock.marketCapCr
+                }
+            },
         )
     }.flowOn(kotlinx.coroutines.Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StocksUiState())
 
@@ -173,15 +214,25 @@ class StocksViewModel @Inject constructor(
             totalOutperformers = sectors.sumOf { it.outperformers },
             totalMeasured = sectors.sumOf { it.measured },
             sectors = sectors,
-            ranking = StockReports.rank(stocks, sel.factor, sel.count, sel.top),
+            ranking = StockReports.rank(stocks, sel.factor, sel.count, sel.top, sel.period),
             distribution = com.fundamentalanalysis.app.domain.analysis.Distributions.of(periodReturns.map { (s, r) -> s.symbol to r }, benchmark),
             distributionRows = periodReturns.sortedByDescending { it.second },
             all = stocks,
             portfolioSize = PortfolioStocks.holdings(positions, HoldingFilter.ALL).size,
             holdingCounts = PortfolioStocks.counts(positions),
-            holdings = held.filter {
-                q.isEmpty() || it.symbol.contains(q, true) || it.sector.contains(q, true) ||
-                    it.tracked?.stock?.name?.contains(q, true) == true
+            holdings = sortRows(
+                held.filter {
+                    q.isEmpty() || it.symbol.contains(q, true) || it.sector.contains(q, true) ||
+                        it.tracked?.stock?.name?.contains(q, true) == true
+                },
+                sel.sortFor(portfolio = true), sel.sortReversed, { it.symbol },
+            ) { p ->
+                when (sel.sortFor(portfolio = true)) {
+                    StockSort.RETURN -> p.tracked?.metrics?.returns?.get(sel.period)
+                    StockSort.DAY -> p.tracked?.metrics?.change1d
+                    StockSort.PNL -> p.pnlPct
+                    else -> p.value
+                }
             },
             leftOut = held.filter { it.tracked == null }.map { it.symbol },
         )
@@ -204,7 +255,14 @@ class StocksViewModel @Inject constructor(
     fun onFactor(factor: StockFactor) = update { it.copy(factor = factor) }
     fun onCount(count: Int) = update { it.copy(count = count) }
     fun onTop(top: Boolean) = update { it.copy(top = top) }
-    fun onQuery(query: String) = update { it.copy(query = query) }
+    fun onQuery(query: String) {
+        queryText = query
+        update { it.copy(query = query) }
+    }
+    fun onSort(sort: StockSort) = update { s ->
+        // Tapping the selected order flips its direction.
+        if (s.sortFor(s.universe == PORTFOLIO_UNIVERSE) == sort) s.copy(sortReversed = !s.sortReversed) else s.copy(sort = sort, sortReversed = false)
+    }
     fun onHoldings(filter: HoldingFilter) = update { it.copy(holdings = filter) }
 
     private companion object {

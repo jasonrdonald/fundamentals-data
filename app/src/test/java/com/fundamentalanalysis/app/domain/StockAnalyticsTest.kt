@@ -102,6 +102,15 @@ class StockAnalyticsTest {
         assertEquals(listOf("RICH", "MID"), StockReports.rank(stocks, StockFactor.VALUATION, 2, top = false).map { it.stock.symbol })
     }
 
+    @Test fun `performance ranks by the selected period's return`() {
+        // UP rose steadily over the year but fell in the last month; DIP fell all year, then rallied.
+        val up = analyzed(stock("UP", "A", List(279) { 100.0 + it } + List(21) { 378.0 - it * 3 }))
+        val dip = analyzed(stock("DIP", "A", List(279) { 300.0 - it * 0.5 } + List(21) { 160.5 + it * 5 }))
+        assertEquals("UP", StockReports.rank(listOf(up, dip), StockFactor.PERFORMANCE, 1, top = true, period = Period.Y1).single().stock.symbol)
+        assertEquals("DIP", StockReports.rank(listOf(up, dip), StockFactor.PERFORMANCE, 1, top = true, period = Period.M1).single().stock.symbol)
+        assertEquals("1M return", StockFactor.PERFORMANCE.primaryLabel(Period.M1))
+    }
+
     @Test fun `sector performance counts stocks that beat the benchmark`() {
         val bench = index(List(300) { 100.0 }, List(40) { 100.0 }) // flat index
         val stocks = listOf(

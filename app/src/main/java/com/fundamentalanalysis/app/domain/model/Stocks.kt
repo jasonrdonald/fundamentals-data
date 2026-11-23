@@ -134,11 +134,15 @@ enum class StockFactor(
     QUALITY("Quality", StockMetric.ROE, listOf(StockMetric.NET_MARGIN, StockMetric.DEBT_TO_EQUITY),
         "Return on equity, latest fiscal year"),
     PERFORMANCE("Performance", StockMetric.RETURN_1Y, listOf(StockMetric.RETURN_3M, StockMetric.EXCESS_1Y),
-        "Price return over the last year"),
+        "Price return over the selected period"),
     PROFIT("Profit", StockMetric.PROFIT_GROWTH, listOf(StockMetric.NET_PROFIT, StockMetric.NET_MARGIN),
         "Net profit growth, latest fiscal year"),
     VOLATILITY("Volatility", StockMetric.VOLATILITY_1Y, listOf(StockMetric.BETA, StockMetric.FROM_52W_HIGH),
         "Annualised volatility; top = steadiest"),
     ALPHA("Alpha", StockMetric.ALPHA, listOf(StockMetric.BETA, StockMetric.EXCESS_1Y),
         "Return above what its beta to its index explains (3Y monthly)"),
+    ;
+
+    /** Name of the ranked value: Performance follows the selected period. */
+    fun primaryLabel(period: Period): String = if (this == PERFORMANCE) "${period.label} return" else primary.label
 }

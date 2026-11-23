@@ -116,9 +116,43 @@ def last_session_complete(meta: dict, now: float) -> bool:
     return end is not None and now >= end
 
 
+# Yahoo keeps hourly bars for 730 days.
+HOURLY_RANGE = "730d"
+
+
+def daily_from_hourly(yahoo_symbol: str, range_: str) -> tuple[list[dict], dict]:
+    """Daily bars rebuilt from hourly ones, for listings Yahoo serves no daily history for (some
+    SME stocks only offer the 1d/5d ranges at 1d bars, yet keep hourly bars since listing)."""
+    span = HOURLY_RANGE if range_ in ("all", "10y") or range_.endswith("y") else range_
+    r = chart(yahoo_symbol, "1h", span)
+    meta = r.get("meta", {})
+    quote = r["indicators"]["quote"][0]
+    days: dict[str, dict] = {}
+    for i, ts in enumerate(r.get("timestamp") or []):
+        o, h, l, c = (quote[k][i] for k in ("open", "high", "low", "close"))
+        if c is None or o is None:
+            continue
+        v = (quote.get("volume") or [None] * (i + 1))[i]
+        d = local_date(ts, meta)
+        b = days.get(d)
+        if b is None:
+            days[d] = {"d": d, "o": round(o, 2), "h": round(h if h is not None else max(o, c), 2),
+                       "l": round(l if l is not None else min(o, c), 2), "c": round(c, 2), "v": int(v) if v else None}
+        else:
+            b["h"] = round(max(b["h"], h if h is not None else c), 2)
+            b["l"] = round(min(b["l"], l if l is not None else c), 2)
+            b["c"] = round(c, 2)
+            if v:
+                b["v"] = (b["v"] or 0) + int(v)
+    return [days[d] for d in sorted(days)], meta
+
+
 def fetch_daily(yahoo_symbol: str, range_: str = "10y") -> list[dict]:
     r = chart(yahoo_symbol, "1d", range_)
     meta = r.get("meta", {})
+    if set(meta.get("validRanges") or []) <= {"1d", "5d"} and meta.get("validRanges"):
+        bars, _ = daily_from_hourly(yahoo_symbol, range_)
+        return finish_daily(yahoo_symbol, bars, meta)
     quote = r["indicators"]["quote"][0]
     volumes = quote.get("volume") or []
     bars = []
@@ -133,7 +167,10 @@ def fetch_daily(yahoo_symbol: str, range_: str = "10y") -> list[dict]:
             "l": round(l if l is not None else min(o, c), 2), "c": round(c, 2),
             "v": int(vol) if vol else None,
         })
+    return finish_daily(yahoo_symbol, bars, meta)
 
+
+def finish_daily(yahoo_symbol: str, bars: list[dict], meta: dict) -> list[dict]:
     # Yahoo often leaves the most recent finished session empty in the series while its
     # metadata already carries the final close/high/low. Rebuild that bar once the session ended.
     market_time, price = meta.get("regularMarketTime"), meta.get("regularMarketPrice")
@@ -172,6 +209,10 @@ def drop_open_session(bars: list[dict]) -> list[dict]:
     if bars and bars[-1]["d"] == today.strftime("%Y-%m-%d") and today.hour * 60 + today.minute < 15 * 60 + 35:
         return bars[:-1]
     return bars
+
+
+# A stored series shorter than this is downloaded in full by the daily job.
+SHORT_HISTORY = 60
 
 
 def recent_range(last_stored: str) -> str | None:
@@ -649,8 +690,8 @@ def update_stock(constituent: dict, index: str, stored: dict, min_sessions: int)
     must be downloaded in full: too long since the last run, no overlap, or restated history.
     """
     daily = dict(stored.get("_daily") or {})
-    if not daily:
-        return None
+    if len(daily) < SHORT_HISTORY:
+        return None  # new listings, or a series Yahoo served short: re-download (cheap, few stocks)
     range_ = recent_range(max(daily))
     if range_ is None:
         return None

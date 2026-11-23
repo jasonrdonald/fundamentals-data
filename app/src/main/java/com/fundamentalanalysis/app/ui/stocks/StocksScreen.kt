@@ -10,11 +10,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Share
@@ -79,7 +83,7 @@ fun StocksScreen(
                         shareCsv(context, "$index stocks ${sel.period.label} return distribution", distributionCsv(state.distributionRows, state.distribution, state.distribution?.benchmark))
                     } else {
                         val side = if (sel.top) "Top" else "Bottom"
-                        shareCsv(context, "$side ${sel.count} $index stocks by ${sel.factor.label}", StockReports.rankingCsv(state.ranking, sel.factor))
+                        shareCsv(context, "$side ${sel.count} $index stocks by ${sel.factor.primaryLabel(sel.period)}", StockReports.rankingCsv(state.ranking, sel.factor, sel.period))
                     }
                 }, enabled = !state.loading) { Icon(Icons.Filled.Share, contentDescription = "Export as CSV") }
             }
@@ -124,6 +128,9 @@ fun StocksScreen(
                     }
                 }
             }
+            // The period drives every tab: sector and distribution returns, the Performance ranking,
+            // and the return shown and sorted on in All stocks.
+            PeriodChips(sel.period, viewModel::onPeriod)
             // Scrollable tabs: four views do not fit as segmented buttons on a phone.
             androidx.compose.material3.SecondaryScrollableTabRow(
                 selectedTabIndex = tabs.indexOf(sel.tab),
@@ -148,7 +155,7 @@ fun StocksScreen(
                 state.all.isEmpty() && sel.query.isEmpty() -> EmptyState("No constituent data in the current dataset.")
                 sel.tab == StocksTab.SECTORS -> SectorsView(state, viewModel, onOpenStock)
                 sel.tab == StocksTab.RANKINGS -> RankingsView(state, viewModel, onOpenStock)
-                sel.tab == StocksTab.DISTRIBUTION -> DistributionView(state, viewModel::onPeriod, onOpenStock)
+                sel.tab == StocksTab.DISTRIBUTION -> DistributionView(state, onOpenStock)
                 else -> AllStocksView(state, viewModel, onOpenStock)
             }
         }
@@ -157,7 +164,7 @@ fun StocksScreen(
 
 @Composable
 private fun PeriodChips(selected: Period, onSelect: (Period) -> Unit) {
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 4.dp)) {
         items(SECTOR_PERIODS) { p -> FilterChip(selected == p, onClick = { onSelect(p) }, label = { Text(p.label) }) }
     }
 }
@@ -168,7 +175,6 @@ private fun PeriodChips(selected: Period, onSelect: (Period) -> Unit) {
 private fun SectorsView(state: StocksUiState, viewModel: StocksViewModel, onOpenStock: (String) -> Unit) {
     val period = state.selection.period
     LazyColumn(contentPadding = PaddingValues(bottom = 16.dp), modifier = Modifier.fillMaxSize()) {
-        item { PeriodChips(period) { viewModel.onPeriod(it) } }
         if (state.leftOut.isNotEmpty()) item { LeftOutNote(state.leftOut, state.offline) }
         item {
             SectionCard(
@@ -275,11 +281,11 @@ private fun RankingsView(state: StocksUiState, viewModel: StocksViewModel, onOpe
             )
         }
         if (state.ranking.isEmpty()) {
-            item { EmptyState("No stocks report ${factor.primary.label}.") }
+            item { EmptyState("No stocks report ${factor.primaryLabel(sel.period)}.") }
         } else {
             item {
                 SectionCard(
-                    "${if (sel.top) "Top" else "Bottom"} ${state.ranking.size} by ${factor.primary.label}",
+                    "${if (sel.top) "Top" else "Bottom"} ${state.ranking.size} by ${factor.primaryLabel(sel.period)}",
                     subtitle = "Also shown: " + factor.supporting.joinToString(" · ") { it.label },
                     modifier = Modifier.padding(horizontal = 16.dp),
                 ) {
@@ -355,17 +361,11 @@ private fun HoldingsView(state: StocksUiState, viewModel: StocksViewModel, onOpe
     val dayGain = day.sumOf { it.second }
     val dayStart = day.sumOf { (p, g) -> p.value - g }
     Column {
-        OutlinedTextField(
-            value = state.selection.query,
-            onValueChange = viewModel::onQuery,
-            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-            placeholder = { Text("Search symbol, company or sector") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-        )
+        SearchBox(viewModel)
+        SortChips(StockSort.PORTFOLIO, state.selection, portfolio = true, onSort = viewModel::onSort)
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "${rows.size} holdings · ${Fmt.inr(value)}",
+                "${rows.size} holdings · ${Fmt.inr(value)} · " + sortCaption(state.selection, portfolio = true),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),
@@ -378,7 +378,7 @@ private fun HoldingsView(state: StocksUiState, viewModel: StocksViewModel, onOpe
         }
         LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
             items(rows, key = { it.symbol }) { p ->
-                HoldingStockRow(p, onClick = { onOpenStock(p.symbol) })
+                HoldingStockRow(p, state.selection.period, onClick = { onOpenStock(p.symbol) })
                 HorizontalDivider()
             }
         }
@@ -386,7 +386,7 @@ private fun HoldingsView(state: StocksUiState, viewModel: StocksViewModel, onOpe
 }
 
 @Composable
-private fun HoldingStockRow(p: Position, onClick: () -> Unit) {
+private fun HoldingStockRow(p: Position, period: Period, onClick: () -> Unit) {
     val tracked = p.tracked
     Row(
         Modifier.fillMaxWidth().then(if (tracked != null) Modifier.clickable(onClick = onClick) else Modifier).padding(vertical = 10.dp),
@@ -400,8 +400,8 @@ private fun HoldingStockRow(p: Position, onClick: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
             )
-            tracked?.metrics?.returns?.get(Period.Y1)?.let { r ->
-                ChangeText("1Y " + Fmt.signedPercent(r), r, style = MaterialTheme.typography.labelSmall)
+            tracked?.metrics?.returns?.get(period)?.let { r ->
+                ChangeText("${period.label} " + Fmt.signedPercent(r), r, style = MaterialTheme.typography.labelSmall)
             }
         }
         Column(horizontalAlignment = Alignment.End) {
@@ -417,23 +417,17 @@ private fun HoldingStockRow(p: Position, onClick: () -> Unit) {
 @Composable
 private fun AllStocksView(state: StocksUiState, viewModel: StocksViewModel, onOpenStock: (String) -> Unit) {
     Column {
-        OutlinedTextField(
-            value = state.selection.query,
-            onValueChange = viewModel::onQuery,
-            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-            placeholder = { Text("Search symbol, company or sector") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-        )
+        SearchBox(viewModel)
+        SortChips(StockSort.INDEX, state.selection, portfolio = false, onSort = viewModel::onSort)
         Text(
-            "${state.all.size} stocks · largest market cap first",
+            "${state.all.size} stocks · " + sortCaption(state.selection, portfolio = false),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 16.dp),
         )
         LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
             items(state.all, key = { it.symbol }) { st ->
-                StockRow(st, onClick = { onOpenStock(st.symbol) })
+                StockRow(st, state.selection.period, onClick = { onOpenStock(st.symbol) })
                 HorizontalDivider()
             }
         }
@@ -441,7 +435,7 @@ private fun AllStocksView(state: StocksUiState, viewModel: StocksViewModel, onOp
 }
 
 @Composable
-private fun StockRow(st: AnalyzedStock, onClick: () -> Unit) {
+private fun StockRow(st: AnalyzedStock, period: Period, onClick: () -> Unit) {
     val m = st.metrics
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
@@ -452,7 +446,62 @@ private fun StockRow(st: AnalyzedStock, onClick: () -> Unit) {
         Column(horizontalAlignment = Alignment.End) {
             Text(Fmt.rupees(m.lastClose), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
             ChangeText(Fmt.signedPercent(m.change1d), m.change1d, style = MaterialTheme.typography.labelMedium)
-            ChangeText("1Y " + Fmt.signedPercent(m.returns[Period.Y1]), m.returns[Period.Y1], style = MaterialTheme.typography.labelSmall)
+            ChangeText("${period.label} " + Fmt.signedPercent(m.returns[period]), m.returns[period], style = MaterialTheme.typography.labelSmall)
         }
+    }
+}
+
+@Composable
+private fun SearchBox(viewModel: StocksViewModel) {
+    OutlinedTextField(
+        value = viewModel.queryText,
+        onValueChange = viewModel::onQuery,
+        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+        trailingIcon = {
+            if (viewModel.queryText.isNotEmpty()) {
+                IconButton(onClick = { viewModel.onQuery("") }) { Icon(Icons.Filled.Clear, contentDescription = "Clear search") }
+            }
+        },
+        placeholder = { Text("Search symbol, company or sector") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp),
+    )
+}
+
+/** Sort orders; tapping the selected one reverses it (the arrow shows the direction). */
+@Composable
+private fun SortChips(options: List<StockSort>, sel: StockSelection, portfolio: Boolean, onSort: (StockSort) -> Unit) {
+    val current = sel.sortFor(portfolio)
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
+        items(options) { o ->
+            val label = if (o == StockSort.RETURN) sel.period.label else o.label
+            FilterChip(
+                selected = o == current,
+                onClick = { onSort(o) },
+                label = { Text(label) },
+                leadingIcon = if (o == current) {
+                    {
+                        val down = (o == StockSort.NAME) == sel.sortReversed
+                        Icon(
+                            if (down) Icons.Filled.ArrowDownward else Icons.Filled.ArrowUpward,
+                            contentDescription = if (down) "Descending" else "Ascending",
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
+                } else null,
+            )
+        }
+    }
+}
+
+private fun sortCaption(sel: StockSelection, portfolio: Boolean): String {
+    val r = sel.sortReversed
+    return when (sel.sortFor(portfolio)) {
+        StockSort.MARKET_CAP -> if (r) "smallest market cap first" else "largest market cap first"
+        StockSort.VALUE -> if (r) "smallest holding first" else "largest holding first"
+        StockSort.RETURN -> "${if (r) "lowest" else "highest"} ${sel.period.label} return first"
+        StockSort.DAY -> "${if (r) "biggest fall" else "biggest gain"} today first"
+        StockSort.PNL -> "${if (r) "lowest" else "highest"} P&L first"
+        StockSort.NAME -> if (r) "Z to A" else "A to Z"
     }
 }

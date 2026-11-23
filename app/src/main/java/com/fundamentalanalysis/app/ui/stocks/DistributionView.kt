@@ -41,15 +41,10 @@ import java.util.Locale
 import kotlin.math.abs
 
 @Composable
-internal fun DistributionView(state: StocksUiState, onPeriod: (Period) -> Unit, onOpenStock: (String) -> Unit) {
+internal fun DistributionView(state: StocksUiState, onOpenStock: (String) -> Unit) {
     val period = state.selection.period
     val stats = state.distribution
     LazyColumn(contentPadding = PaddingValues(bottom = 16.dp), modifier = Modifier.fillMaxSize()) {
-        item {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
-                items(SECTOR_PERIODS) { p -> FilterChip(period == p, onClick = { onPeriod(p) }, label = { Text(p.label) }) }
-            }
-        }
         if (state.leftOut.isNotEmpty()) item { LeftOutNote(state.leftOut, state.offline) }
         if (stats == null) {
             item { EmptyState("Not enough stocks report a ${period.label} return to draw a distribution.") }

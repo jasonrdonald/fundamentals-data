@@ -161,20 +161,23 @@ object StockReports {
      * Top (best) or bottom (worst) [count] stocks for a factor, using the factor's primary measure
      * and its direction. Stocks without a value are left out.
      */
-    fun rank(stocks: List<AnalyzedStock>, factor: StockFactor, count: Int, top: Boolean): List<RankedStock> {
+    /** Performance ranks by the return over [period]; the other factors ignore it. */
+    fun rank(stocks: List<AnalyzedStock>, factor: StockFactor, count: Int, top: Boolean, period: Period = Period.Y1): List<RankedStock> {
         val metric = factor.primary
-        val withValues = stocks.mapNotNull { s -> s.valueOf(metric)?.let { s to it } }
+        val withValues = stocks.mapNotNull { s ->
+            (if (factor == StockFactor.PERFORMANCE) s.metrics.returns[period] else s.valueOf(metric))?.let { s to it }
+        }
         val bestFirst = if (metric.higherIsBetter) withValues.sortedByDescending { it.second } else withValues.sortedBy { it.second }
         val ranked = bestFirst.mapIndexed { i, (s, v) -> RankedStock(i + 1, s, v) }
         return if (top) ranked.take(count) else ranked.takeLast(count).reversed()
     }
 
-    fun rankingCsv(rows: List<RankedStock>, factor: StockFactor): String = buildString {
-        val metrics = listOf(factor.primary) + factor.supporting
-        appendLine((listOf("rank", "symbol", "name", "sector") + metrics.map { it.label }).joinToString(",") { csv(it) })
+    fun rankingCsv(rows: List<RankedStock>, factor: StockFactor, period: Period = Period.Y1): String = buildString {
+        val metrics = factor.supporting
+        appendLine((listOf("rank", "symbol", "name", "sector", factor.primaryLabel(period)) + metrics.map { it.label }).joinToString(",") { csv(it) })
         rows.forEach { r ->
             appendLine(
-                (listOf(r.rank.toString(), r.stock.symbol, r.stock.stock.name, r.stock.stock.industry) +
+                (listOf(r.rank.toString(), r.stock.symbol, r.stock.stock.name, r.stock.stock.industry, raw(factor.primary, r.value)) +
                     metrics.map { m -> r.stock.valueOf(m)?.let { raw(m, it) }.orEmpty() }).joinToString(",") { csv(it) },
             )
         }
