@@ -376,7 +376,7 @@ private fun HoldingsView(state: StocksUiState, viewModel: StocksViewModel, onOpe
                 ChangeText("P&L " + Fmt.signedPercent(costed / invested - 1), costed - invested, style = MaterialTheme.typography.labelMedium)
             }
         }
-        LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
+        LazyColumn(state = rememberTopOnChange(state.selection), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
             items(rows, key = { it.symbol }) { p ->
                 HoldingStockRow(p, state.selection.period, onClick = { onOpenStock(p.symbol) })
                 HorizontalDivider()
@@ -425,7 +425,7 @@ private fun AllStocksView(state: StocksUiState, viewModel: StocksViewModel, onOp
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 16.dp),
         )
-        LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
+        LazyColumn(state = rememberTopOnChange(state.selection), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
             items(state.all, key = { it.symbol }) { st ->
                 StockRow(st, state.selection.period, onClick = { onOpenStock(st.symbol) })
                 HorizontalDivider()
@@ -449,6 +449,19 @@ private fun StockRow(st: AnalyzedStock, period: Period, onClick: () -> Unit) {
             ChangeText("${period.label} " + Fmt.signedPercent(m.returns[period]), m.returns[period], style = MaterialTheme.typography.labelSmall)
         }
     }
+}
+
+/**
+ * List state that jumps back to the top when the list, order, period or search changes. Rows are
+ * keyed by symbol, so otherwise the list would stay pinned to whichever stock was first on screen.
+ */
+@Composable
+private fun rememberTopOnChange(sel: StockSelection): androidx.compose.foundation.lazy.LazyListState {
+    val list = androidx.compose.foundation.lazy.rememberLazyListState()
+    androidx.compose.runtime.LaunchedEffect(sel.universe, sel.holdings, sel.sort, sel.sortReversed, sel.period, sel.query) {
+        list.scrollToItem(0)
+    }
+    return list
 }
 
 @Composable
