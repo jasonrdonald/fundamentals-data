@@ -1,18 +1,18 @@
 {
  "schemaVersion": 5,
- "version": 5,
- "datasetVersion": 26,
- "asOf": "2026-11-23",
- "generatedAt": "2026-11-24T03:08:37Z",
+ "version": 6,
+ "datasetVersion": 27,
+ "asOf": "2026-11-25",
+ "generatedAt": "2026-11-26T00:48:39Z",
  "dailyFrom": "2025-09-01",
  "parts": [
   {
    "name": "analytics",
    "file": "analytics.json",
    "group": "primary",
-   "version": 5,
-   "bytes": 305063,
-   "sha256": "b4e64ef88027d2167e91a7ad6ae43be1672266c091515def7425304e459ae67f",
+   "version": 6,
+   "bytes": 304690,
+   "sha256": "43c51b760ff99f65af37962fb2db2a63beffc73059cc055f4de8336c3c28c8c6",
    "records": 761,
    "description": "Precomputed metrics, sector aggregates and calendar tables"
   },
@@ -170,10 +170,10 @@
    "name": "daily-2026-11",
    "file": "daily-2026-11.json",
    "group": "primary",
-   "version": 5,
-   "bytes": 55518,
-   "sha256": "4ca10396647c7fc710e420195aa21492ad55d64a8eff97138413f9276b4c2b62",
-   "records": 4845,
+   "version": 6,
+   "bytes": 58534,
+   "sha256": "f95cdea5f3181f0a94dfcf744b8169097333841566b3b5d7f1d1249d36be0bb2",
+   "records": 5167,
    "description": "Daily prices, Nov 2026"
   },
   {
@@ -370,9 +370,9 @@
    "name": "monthly-2026",
    "file": "monthly-2026.json",
    "group": "primary",
-   "version": 5,
-   "bytes": 46865,
-   "sha256": "b28882117a3d95ba06d7be5e384f6113a4f5c423a672bd3b5f4bdd3b4270f148",
+   "version": 6,
+   "bytes": 46857,
+   "sha256": "0575b75dc6296666481d25698cd0601c3d3c0d4a2ac4e4303ac5d272808f62dc",
    "records": 3549,
    "description": "Month-end prices and valuation, 2026"
   },
@@ -388,6 +388,21 @@
   }
  ],
  "history": [
+  {
+   "version": 6,
+   "datasetVersion": 27,
+   "generatedAt": "2026-11-26T00:48:39Z",
+   "asOf": "2026-11-25",
+   "changed": [
+    "analytics",
+    "daily-2026-11",
+    "monthly-2026"
+   ],
+   "removed": [],
+   "failures": [],
+   "indices": 19,
+   "stocks": 304
+  },
   {
    "version": 5,
    "datasetVersion": 26,
