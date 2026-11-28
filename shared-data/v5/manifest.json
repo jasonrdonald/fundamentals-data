@@ -1,9 +1,9 @@
 {
  "schemaVersion": 5,
- "version": 8,
- "datasetVersion": 29,
+ "version": 9,
+ "datasetVersion": 30,
  "asOf": "2026-11-27",
- "generatedAt": "2026-11-27T16:33:50Z",
+ "generatedAt": "2026-11-28T00:20:41Z",
  "dailyFrom": "2025-09-01",
  "parts": [
   {
@@ -170,9 +170,9 @@
    "name": "daily-2026-11",
    "file": "daily-2026-11.json",
    "group": "primary",
-   "version": 8,
-   "bytes": 64647,
-   "sha256": "8c10b1774b023544e7c0e5c67a4502aa3d69452ac7fdfd20e4c3e09f53b4a4d8",
+   "version": 9,
+   "bytes": 64645,
+   "sha256": "2be1dbd1efe363c4761c28efd584c2f89bc864eb108b8cb9aa7d76ec093d9e74",
    "records": 5813,
    "description": "Daily prices, Nov 2026"
   },
@@ -388,6 +388,19 @@
   }
  ],
  "history": [
+  {
+   "version": 9,
+   "datasetVersion": 30,
+   "generatedAt": "2026-11-28T00:20:41Z",
+   "asOf": "2026-11-27",
+   "changed": [
+    "daily-2026-11"
+   ],
+   "removed": [],
+   "failures": [],
+   "indices": 19,
+   "stocks": 304
+  },
   {
    "version": 8,
    "datasetVersion": 29,
