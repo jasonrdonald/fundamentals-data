@@ -1,18 +1,18 @@
 {
  "schemaVersion": 5,
- "version": 9,
- "datasetVersion": 30,
+ "version": 10,
+ "datasetVersion": 31,
  "asOf": "2026-11-27",
- "generatedAt": "2026-11-28T00:20:41Z",
+ "generatedAt": "2026-11-28T11:05:35Z",
  "dailyFrom": "2025-09-01",
  "parts": [
   {
    "name": "analytics",
    "file": "analytics.json",
    "group": "primary",
-   "version": 8,
-   "bytes": 304958,
-   "sha256": "b54f6d9f0d18cd69ecbb4826a29bd4d38d8d46de8eb4caf465d8ff2b85cae467",
+   "version": 10,
+   "bytes": 304955,
+   "sha256": "0dc47e6f9c905fa8dd2534f1a3c1dcfd4de061f889e988674829aa2a9eeff7a8",
    "records": 761,
    "description": "Precomputed metrics, sector aggregates and calendar tables"
   },
@@ -20,9 +20,9 @@
    "name": "core",
    "file": "core.json",
    "group": "primary",
-   "version": 3,
-   "bytes": 87347,
-   "sha256": "a60d16f24fcaef8a6ffca20e56c8dec38dab3801f8597fc48a5aab6d305fa917",
+   "version": 10,
+   "bytes": 87349,
+   "sha256": "5d8726bf094bfb3fcfe0b9e06e8dbbbdb5cd3697869be6cb8cab55deca6a994e",
    "records": 323,
    "description": "Index list, constituents and stock list"
   },
@@ -380,14 +380,29 @@
    "name": "fundamentals",
    "file": "fundamentals.json",
    "group": "history",
-   "version": 3,
-   "bytes": 270384,
-   "sha256": "bd97c68cb0d3508a536acf4dae4a63612d8685e42903a191d43a71423385e0a4",
-   "records": 2773,
+   "version": 10,
+   "bytes": 270322,
+   "sha256": "1c75353148cb647ddacfcd2edbc9500d641f9c1f5651ad1712ad7c5277f61bee",
+   "records": 2772,
    "description": "Annual and quarterly financials"
   }
  ],
  "history": [
+  {
+   "version": 10,
+   "datasetVersion": 31,
+   "generatedAt": "2026-11-28T11:05:35Z",
+   "asOf": "2026-11-27",
+   "changed": [
+    "analytics",
+    "core",
+    "fundamentals"
+   ],
+   "removed": [],
+   "failures": [],
+   "indices": 19,
+   "stocks": 304
+  },
   {
    "version": 9,
    "datasetVersion": 30,
